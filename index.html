@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verifiche Avanzate - Area Docente</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, where, addDoc, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+
+        // CONFIGURAZIONE FIREBASE ESPLICITA FORNITA DALL'UTENTE
+        const explicitFirebaseConfig = {
+            apiKey: "AIzaSyBJzjPpfxgGbt8atUviVXonByfszGhpyxA",
+            authDomain: "verifiche-595e5-8a7a0.firebaseapp.com",
+            projectId: "verifiche-595e5-8a7a0",
+            storageBucket: "verifiche-595e5-8a7a0.firebasestorage.app",
+            messagingSenderId: "859645064209",
+            appId: "1:859645064209:web:5e310b8553b1a4095b6db0",
+            measurementId: "G-KEPTYZZLCX"
+        };
+        
+        // Utilizziamo il projectId per definire il percorso principale per Firestore (requisito per le regole di sicurezza)
+        const appId = explicitFirebaseConfig.projectId;
+
+        // Impostazioni API
+        const apiUrlBase = "https://generativelanguage.googleapis.com/v1beta/models/";
+        const modelName = "gemini-2.5-flash-preview-09-2025";
+        const apiKey = ""; // Lasciare vuoto
+
+        // Inizializzazione Firebase
+        let app, db, auth;
+        let userId = null;
+        let isAuthReady = false;
+
+        setLogLevel('Debug');
+
+        try {
+            app = initializeApp(explicitFirebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (error) {
+            console.error("Errore nell'inizializzazione di Firebase:", error);
+            document.getElementById('app').innerHTML = '<div class="p-6 text-red-600 bg-red-100 rounded-lg">Errore: Impossibile inizializzare Firebase. Controlla la configurazione.</div>';
+        }
+
+        // --- Funzioni di Utilità (RESTANO UGUALI) ---
+        function showMessage(message, type = 'info') {
+            const container = document.getElementById('message-box');
+            let color = { info: 'bg-blue-100 text-blue-800', error: 'bg-red-100 text-red-800', success: 'bg-green-100 text-green-800', loading: 'bg-yellow-100 text-yellow-800 animate-pulse' }[type];
+            container.innerHTML = `<div class="p-3 my-4 rounded-lg shadow-md ${color}">${message}</div>`;
+            container.classList.remove('hidden');
+            if (type !== 'loading') {
+                setTimeout(() => container.classList.add('hidden'), 5000);
+            }
+        }
+
+        function hideMessage() {
+            document.getElementById('message-box').classList.add('hidden');
+        }
+        
+        async function fetchWithBackoff(url, options, maxRetries = 5) {
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.ok) {
+                        return await response.json();
+                    }
+                    if (response.status === 429 && attempt < maxRetries - 1) { // Too Many Requests
+                        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                        console.warn(`Rate limit raggiunto. Tentativo ${attempt + 1} di ${maxRetries}. Riprova tra ${Math.round(delay / 1000)}s.`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    throw new Error(`Errore API: ${response.status} ${response.statusText}`);
+                } catch (error) {
+                    console.error("Errore durante il fetch:", error);
+                    if (attempt === maxRetries - 1) throw error;
+                    const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                    console.warn(`Errore di rete. Tentativo ${attempt + 1} di ${maxRetries}. Riprova tra ${Math.round(delay / 1000)}s.`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+        // --- Logica Studente/Verifica (RESTANO UGUALI) ---
+
+        function generatePrintableExam(examData, correctionData = null) {
+            const isCorrected = correctionData !== null && correctionData.detailedCorrection;
+            let html = `
+                <style>
+                    body { font-family: 'Inter', sans-serif; margin: 0; padding: 20px; line-height: 1.6; font-size: 11pt; }
+                    .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+                    .header h1 { font-size: 20pt; margin-bottom: 5px; }
+                    .metadata { display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 10pt; }
+                    .question { margin-bottom: 25px; padding: 15px; border: 1px solid #ccc; border-radius: 8px; page-break-inside: avoid; }
+                    .q-text { font-weight: bold; margin-bottom: 10px; color: #1f2937; }
+                    .answer-box { border: 1px dashed #9ca3af; padding: 10px; min-height: 50px; margin-top: 10px; background-color: #f9fafb; }
+                    .correction-summary { margin-top: 20px; padding: 15px; background-color: #ecfdf5; border: 2px solid #10b981; border-radius: 8px; }
+                    .grid-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                    .grid-table th, .grid-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                    .grid-table th { background-color: #f3f4f6; font-weight: bold; }
+                    .score-achieved { font-weight: bold; color: ${isCorrected ? (correctionData.totalScore / 120 > 0.6 ? '#10b981' : '#ef4444') : 'inherit'}; }
+                    .correction-feedback { margin-top: 8px; font-style: italic; color: #4b5563; border-top: 1px dotted #e5e7eb; padding-top: 5px; }
+                    .ai-detected { color: #f97316; font-weight: bold; }
+                    .correct-answer-text { color: #10b981; font-weight: 500; margin-top: 5px; }
+                    @media print {
+                        .no-print { display: none; }
+                        body { max-width: 21cm; margin: 0 auto; }
+                    }
+                </style>
+                <div class="header">
+                    <h1>Verifica Dettagliata - ${examData.topic.substring(0, 50)}...</h1>
+                    <p>Corso: ${examData.class}° Classe | ID Studente: ${examData.studentNumber} | ID Verifica: ${examData.examId.substring(0, 8)}</p>
+                </div>
+                ${isCorrected ? `
+                    <div class="correction-summary">
+                        <h2 class="text-lg font-bold mb-2">Risultato Finale</h2>
+                        <p class="text-sm">Punteggio Totale: <span class="score-achieved">${correctionData.totalScore} / 120</span></p>
+                        <p class="text-sm">Voto Finale (scala 1-10): <span class="text-xl font-extrabold text-blue-600">${correctionData.grade.toFixed(2)}</span></p>
+                        <p class="text-xs mt-1 text-gray-600">Correzione Automatica tramite Gemini AI.</p>
+                    </div>
+                ` : ''}
+            `;
+
+            examData.questions.forEach((q, index) => {
+                const correction = isCorrected ? correctionData.detailedCorrection.find(c => c.questionId === q.id) : null;
+                const studentAnswer = correction ? correction.studentAnswer : (examData.submission?.studentAnswers?.find(a => a.questionId === q.id)?.answer || 'Risposta non fornita.');
+                
+                html += `
+                    <div class="question">
+                        <div class="q-text">${index + 1}. [${q.difficulty}] (Max Punti: ${q.maxPoints}) ${q.text}</div>
+                        ${q.type.includes('Image') ? `<p class="text-xs text-gray-500 my-2">-- [Immagine/Schema Placeholder] --</p><div class="w-full h-20 bg-gray-200 flex items-center justify-center text-gray-600 rounded-md">Placeholder per l'Immagine</div>` : ''}
+
+                        <p class="text-sm font-semibold mt-3">Tua Risposta:</p>
+                        <div class="answer-box text-sm">${studentAnswer}</div>
+
+                        ${isCorrected ? `
+                            <div class="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-md">
+                                <p class="text-sm font-semibold text-gray-700">Punteggio Ottenuto: <span class="${correction.scoreAchieved > 0 ? 'text-green-600' : 'text-red-600'}">${correction.scoreAchieved} / ${q.maxPoints}</span></p>
+                                ${correction.aiDetected ? `<p class="text-xs ai-detected">ATTENZIONE: Rilevata possibile risposta generata da AI. Punti assegnati: 0.</p>` : ''}
+                                <p class="text-sm correct-answer-text">Risposta Corretta: ${q.correctAnswer}</p>
+                                <p class="correction-feedback text-xs">Feedback Correzione: ${correction.feedback || 'Nessun feedback specifico.'}</p>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+
+            if (isCorrected) {
+                html += `
+                    <div class="mt-8">
+                        <h2 class="text-xl font-bold mb-4">Griglia di Valutazione Dettagliata</h2>
+                        <table class="grid-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Difficoltà</th>
+                                    <th>Domanda (Estratto)</th>
+                                    <th>Max Punti</th>
+                                    <th>Punti Ottenuti</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${correctionData.detailedCorrection.map((c, index) => `
+                                    <tr>
+                                        <td>${index + 1}</td>
+                                        <td>${examData.questions[index].difficulty}</td>
+                                        <td>${examData.questions[index].text.substring(0, 40)}...</td>
+                                    <td>${examData.questions[index].maxPoints}</td>
+                                        <td class="score-achieved">${c.scoreAchieved}</td>
+                                    </tr>
+                                `).join('')}
+                                <tr>
+                                    <td colspan="3" class="text-right font-bold">TOTALE</td>
+                                    <td class="font-bold">120</td>
+                                    <td class="font-bold text-lg text-blue-600">${correctionData.totalScore}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            return `
+                <html>
+                    <head>
+                        <title>Verifica ${isCorrected ? 'Corretta' : ''} - ${examData.examId.substring(0, 8)}</title>
+                        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+                    </head>
+                    <body>${html}</body>
+                </html>
+            `;
+        }
+
+        function renderStudentView(examId) {
+            document.getElementById('app').innerHTML = `
+                <div class="max-w-4xl mx-auto p-6 bg-white shadow-2xl rounded-xl">
+                    <div id="student-exam-content">
+                        <h1 class="text-3xl font-extrabold text-gray-900 mb-4">Caricamento Verifica...</h1>
+                        <div class="text-center p-10"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto"></div><p class="mt-3 text-indigo-600">Attendere prego.</p></div>
+                    </div>
+                </div>
+            `;
+            loadStudentExam(examId);
+        }
+
+        async function loadStudentExam(examId) {
+            const docRef = doc(db, `artifacts/${appId}/public/data/exams`, examId);
+            const docSnap = await getDoc(docRef);
+            const container = document.getElementById('student-exam-content');
+
+            if (!docSnap.exists()) {
+                container.innerHTML = `<h2 class="text-red-500">Errore: Verifica non trovata.</h2>`;
+                return;
+            }
+
+            const examData = docSnap.data();
+            const isSubmitted = examData.submission && examData.submission.totalScore !== undefined;
+
+            if (isSubmitted) {
+                // Mostra il risultato e il pulsante di download
+                container.innerHTML = `
+                    <h1 class="text-3xl font-extrabold text-green-600 mb-4 text-center">Verifica Consegnata e Corretta!</h1>
+                    <div class="p-6 my-6 bg-green-50 border-l-4 border-green-400 rounded-lg shadow-inner">
+                        <p class="text-lg font-semibold text-green-800">Argomento: ${examData.topic.substring(0, 80)}...</p>
+                        <p class="text-2xl font-bold mt-3">Voto Finale: <span class="text-4xl text-blue-700">${examData.submission.grade.toFixed(2)}</span> / 10</p>
+                        <p class="text-sm text-gray-600 mt-2">Punteggio Totale: ${examData.submission.totalScore} / 120</p>
+                    </div>
+                    <button id="download-corrected-pdf" class="w-full mt-6 px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-lg hover:bg-indigo-700 transition duration-300">
+                        Scarica PDF Corretto e Griglia di Valutazione
+                    </button>
+                    <div class="text-xs text-gray-500 mt-4 text-center">ID Verifica: ${examId}</div>
+                `;
+                document.getElementById('download-corrected-pdf').onclick = () => {
+                    const printHtml = generatePrintableExam(examData, examData.submission);
+                    const printWindow = window.open('', '', 'height=600,width=800');
+                    printWindow.document.write(printHtml);
+                    printWindow.document.close();
+                    printWindow.print();
+                };
+                return;
+            }
+
+            // Mostra il form della verifica
+            container.innerHTML = `
+                <h1 class="text-3xl font-extrabold text-indigo-600 mb-2">${examData.topic.substring(0, 80)}...</h1>
+                <p class="text-lg text-gray-600 mb-6">Completa la verifica. Hai 20 domande totali.</p>
+                <form id="student-exam-form" class="space-y-8">
+                    ${examData.questions.map((q, index) => `
+                        <div class="p-6 border-2 border-gray-100 rounded-xl shadow-sm hover:shadow-md transition duration-200">
+                            <label for="q-${q.id}" class="block text-lg font-semibold text-gray-800 mb-2">
+                                ${index + 1}. [${q.difficulty}] (Max Punti: ${q.maxPoints}) ${q.text}
+                            </label>
+                            ${q.type.includes('Image') ? `
+                                <div class="my-3 w-full h-32 bg-gray-100 flex items-center justify-center text-gray-500 rounded-lg border-dashed border-2 border-gray-300">
+                                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 16m-2-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                    Placeholder Immagine: Riferimento per la Domanda
+                                </div>
+                            ` : ''}
+                            <textarea id="q-${q.id}" name="q-${q.id}" rows="4" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3" placeholder="Scrivi la tua risposta dettagliata qui..."></textarea>
+                            <p class="text-xs text-gray-500 mt-1">${q.type.includes('MC') || q.type.includes('TF') ? 'Per domande a scelta multipla/Vero-Falso, scrivi l\'opzione o V/F.' : 'Risposta aperta.'}</p>
+                        </div>
+                    `).join('')}
+                    <button type="submit" class="w-full px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-xl hover:bg-indigo-700 transition duration-300 text-lg">
+                        Consegna Verifica e Avvia Correzione Automatica
+                    </button>
+                </form>
+            `;
+
+            document.getElementById('student-exam-form').onsubmit = async (e) => {
+                e.preventDefault();
+                const form = e.target;
+                const studentAnswers = examData.questions.map(q => ({
+                    questionId: q.id,
+                    answer: form[`q-${q.id}`].value.trim()
+                }));
+
+                await submitAndCorrectExam(examId, examData, studentAnswers);
+            };
+        }
+
+        async function submitAndCorrectExam(examId, examData, studentAnswers) {
+            const submitButton = document.querySelector('#student-exam-form button[type="submit"]');
+            submitButton.disabled = true;
+            submitButton.textContent = 'Correzione in corso... (Potrebbe impiegare 30-60 secondi) ⏳';
+            showMessage('Avvio correzione AI. Attendere, questa è un\'operazione complessa che richiede tempo.', 'loading');
+
+            const detailedCorrection = [];
+            let totalScore = 0;
+
+            try {
+                // Correzione AI (RESTANO UGUALI)
+                for (let i = 0; i < examData.questions.length; i++) {
+                    const q = examData.questions[i];
+                    const studentAnswerObj = studentAnswers.find(a => a.questionId === q.id);
+                    const studentAnswer = studentAnswerObj ? studentAnswerObj.answer : 'Risposta non fornita.';
+                    
+                    showMessage(`Correzione Domanda ${i + 1} di 20... 🧠`, 'loading');
+
+                    const systemPrompt = `Sei un correttore di esami universitari esperto. Devi valutare la risposta di uno studente in base alla domanda e alla risposta corretta fornita. Utilizza un approccio severo ma giusto.
+                    Regole di Punteggio:
+                    1. La risposta vale 0 punti se la tua valutazione suggerisce che è stata generata da un modello di AI (ad esempio, è troppo perfetta, strutturata in modo generico e formale, o non mostra il ragionamento umano atteso).
+                    2. Altrimenti, valuta la risposta su una scala da 0 a ${q.maxPoints} punti, in base alla completezza e alla correttezza rispetto alla risposta attesa.
+                    3. Fornisci un feedback conciso.
+                    
+                    Rispondi SOLO con un oggetto JSON che segue questo schema.`;
+
+                    const userQuery = `Domanda: "${q.text}" (Max Punti: ${q.maxPoints}). Risposta Corretta Attesa: "${q.correctAnswer}". Risposta dello Studente: "${studentAnswer}".`;
+                    
+                    const payload = {
+                        contents: [{ parts: [{ text: userQuery }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "OBJECT",
+                                properties: {
+                                    scoreAchieved: { type: "INTEGER", description: "Il punteggio assegnato da 0 a " + q.maxPoints },
+                                    aiDetected: { type: "BOOLEAN", description: "True se la risposta è ritenuta generata da AI e ha ricevuto 0 punti per questo motivo." },
+                                    feedback: { type: "STRING", description: "Feedback conciso sulla risposta." }
+                                }
+                            }
+                        }
+                    };
+
+                    const response = await fetchWithBackoff(`${apiUrlBase}${modelName}:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const jsonText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+                    let correctionResult;
+                    try {
+                        correctionResult = JSON.parse(jsonText);
+                    } catch (e) {
+                        console.error("Errore nel parsing JSON della correzione:", jsonText);
+                        correctionResult = { scoreAchieved: 0, aiDetected: false, feedback: "Errore di parsing o risposta AI in formato errato." };
+                    }
+
+                    if (correctionResult.aiDetected === true) {
+                        correctionResult.scoreAchieved = 0;
+                    }
+                    
+                    totalScore += correctionResult.scoreAchieved;
+
+                    detailedCorrection.push({
+                        questionId: q.id,
+                        studentAnswer: studentAnswer,
+                        ...correctionResult
+                    });
+                }
+                
+                const maxTotalPoints = 120;
+                const grade = 1 + (9 * (totalScore / maxTotalPoints)); // Scala 1-10 (1 è il minimo, 10 il massimo)
+
+                const submissionData = {
+                    studentAnswers: studentAnswers,
+                    totalScore: totalScore,
+                    grade: grade,
+                    correctedAt: new Date().toISOString(),
+                    detailedCorrection: detailedCorrection
+                };
+
+                // Aggiorna il documento in Firestore
+                const docRef = doc(db, `artifacts/${appId}/public/data/exams`, examId);
+                await updateDoc(docRef, { submission: submissionData });
+
+                showMessage(`Correzione completata! Voto Finale: ${grade.toFixed(2)}/10.`, 'success');
+
+                loadStudentExam(examId);
+
+            } catch (error) {
+                console.error("Errore durante la correzione automatica:", error);
+                showMessage(`Errore critico durante la correzione. Riprova più tardi. ${error.message}`, 'error');
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Consegna Verifica e Avvia Correzione Automatica';
+            }
+        }
+
+
+        // --- Logica Docente/Generazione (RESTANO UGUALI) ---
+
+        async function generateQuestionsAndRubric(topic, numQuestions, intermediate, difficult, veryDifficult) {
+            const totalPoints = intermediate * 4 + difficult * 6 + veryDifficult * 10;
+            const systemPrompt = `Sei un esperto accademico e creatore di test. Genera un set di ${numQuestions} domande di livello universitario basate sull'argomento fornito.
+            Requisiti delle Domande:
+            - ${intermediate} Domande Intermedie (Max 4 punti ciascuna)
+            - ${difficult} Domande Difficili (Max 6 punti ciascuna)
+            - ${veryDifficult} Domande Difficilissime (Max 10 punti ciascuna)
+            - Il totale massimo di punti deve essere ${totalPoints}.
+            - Le tipologie di domande devono includere: Completamento, Vero/Falso (TF), Scelta Multipla (MC - 4 opzioni), Domande Aperte Teoriche, Domande Aperte Pratiche (es. 'Fornisci un esempio', 'Analizza il caso').
+            - Per almeno 3 domande, il campo 'type' deve contenere 'Image-Based', indicando che la domanda fa riferimento a un'immagine/schema (da visualizzare come placeholder).
+            - Fornisci per ogni domanda la risposta corretta (o la soluzione attesa) nel campo 'correctAnswer'.
+
+            Rispondi SOLO con un oggetto JSON che segue questo schema.`;
+
+            const userQuery = `Argomento Dettagliato per la verifica (livello universitario): "${topic}"`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            questions: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        id: { type: "INTEGER", description: "ID univoco da 1 a " + numQuestions },
+                                        type: { type: "STRING", description: "Tipo di domanda: MC, TF, Completion, Practical, Theoretical, Image-Based, o combinazioni come 'MC, Image-Based'" },
+                                        text: { type: "STRING", description: "Il testo completo e dettagliato della domanda." },
+                                        options: { type: "ARRAY", items: { type: "STRING" }, description: "Opzioni se MC/TF, altrimenti null." },
+                                        difficulty: { type: "STRING", enum: ["Intermediate", "Difficult", "Very Difficult"], description: "Livello di difficoltà." },
+                                        correctAnswer: { type: "STRING", description: "La risposta corretta o la soluzione attesa. Dettagliata per la correzione AI." },
+                                        maxPoints: { type: "INTEGER", description: "Punti massimi assegnabili." }
+                                    },
+                                    required: ["id", "type", "text", "difficulty", "correctAnswer", "maxPoints"]
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            const response = await fetchWithBackoff(`${apiUrlBase}${modelName}:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const jsonText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+            let result;
+            try {
+                result = JSON.parse(jsonText);
+                if (!result.questions || result.questions.length !== numQuestions) {
+                    throw new Error("Il modello non ha generato il numero corretto di domande.");
+                }
+                return result.questions;
+            } catch (e) {
+                console.error("Errore nel parsing JSON della generazione domande:", e, jsonText);
+                throw new Error("Errore di formato dalla generazione AI. Riprova. Dettagli: " + e.message);
+            }
+        }
+
+        async function handleGenerateExams(e) {
+            e.preventDefault();
+            const form = e.target;
+            const topic = form.topic.value.trim();
+            const students = {
+                1: parseInt(form.class1.value) || 0,
+                2: parseInt(form.class2.value) || 0,
+                3: parseInt(form.class3.value) || 0,
+                5: parseInt(form.class5.value) || 0,
+            };
+
+            if (!topic) {
+                showMessage("Inserisci un argomento dettagliato.", 'error');
+                return;
+            }
+
+            const totalStudents = Object.values(students).reduce((sum, count) => sum + count, 0);
+            if (totalStudents === 0) {
+                showMessage("Inserisci il numero di studenti per almeno una classe.", 'error');
+                return;
+            }
+            
+            const numQuestions = 20;
+            const intermediate = 10;
+            const difficult = 5;
+            const veryDifficult = 5;
+
+            const button = document.getElementById('generate-button');
+            button.disabled = true;
+            button.textContent = 'Generazione Domande AI in corso... (Attendere 1 minuto)';
+            showMessage('Fase 1/2: Generazione e articolazione delle 20 domande AI (livello universitario).', 'loading');
+
+            try {
+                // Genera il set di domande
+                const questions = await generateQuestionsAndRubric(topic, numQuestions, intermediate, difficult, veryDifficult);
+                
+                button.textContent = 'Fase 2/2: Salvataggio Verifiche su Database...';
+                showMessage(`Fase 2/2: Domande generate con successo. Salvataggio di ${totalStudents} verifiche su Firebase Firestore.`, 'loading');
+
+                const examCollection = collection(db, `artifacts/${appId}/public/data/exams`);
+                const generatedExams = [];
+
+                let studentIndex = 1;
+                for (const className in students) {
+                    for (let i = 1; i <= students[className]; i++) {
+                        const examId = `${className}-${studentIndex++}-${Date.now()}`;
+                        
+                        // Creazione dell'oggetto Verifica per Firestore
+                        const examData = {
+                            examId: examId,
+                            teacherId: userId,
+                            class: parseInt(className),
+                            studentNumber: i,
+                            topic: topic,
+                            createdAt: new Date().toISOString(),
+                            questions: questions.map((q, index) => ({
+                                ...q,
+                                // Rinnovo l'ID per essere sicuro e aggiungo punti massimi per chiarezza
+                                id: index + 1,
+                                maxPoints: q.difficulty === 'Intermediate' ? 4 : (q.difficulty === 'Difficult' ? 6 : 10),
+                            })),
+                            submission: {} // Vuoto inizialmente
+                        };
+
+                        // Salva la verifica su Firestore (accessibile tramite link)
+                        await setDoc(doc(examCollection, examId), examData);
+                        
+                        generatedExams.push({
+                            examId: examId,
+                            class: parseInt(className),
+                            studentNumber: i,
+                            link: `${window.location.origin}${window.location.pathname}?exam=${examId}`
+                        });
+                    }
+                }
+
+                showMessage(`Generazione completata! Create ${totalStudents} verifiche con successo.`, 'success');
+                renderTeacherResults(generatedExams);
+
+            } catch (error) {
+                console.error("Errore durante la generazione delle verifiche:", error);
+                showMessage(`Errore: ${error.message || 'Impossibile completare la generazione AI.'}`, 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Genera Verifiche Dettagliate';
+            }
+        }
+
+        function renderTeacherResults(generatedExams) {
+            const resultsContainer = document.getElementById('generation-results');
+            resultsContainer.classList.remove('hidden');
+            resultsContainer.innerHTML = `
+                <h2 class="text-2xl font-bold text-indigo-700 mb-4 border-b pb-2">Verifiche Generate (${generatedExams.length} Totali)</h2>
+                <div class="space-y-3">
+                    ${generatedExams.map(exam => `
+                        <div class="p-4 bg-white border border-indigo-100 rounded-lg shadow-sm flex justify-between items-center">
+                            <div>
+                                <p class="font-semibold text-gray-800">Classe ${exam.class} - Studente ${exam.studentNumber}</p>
+                                <p class="text-sm text-gray-500">ID: ${exam.examId.substring(0, 8)}</p>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <a href="${exam.link}" target="_blank" class="px-3 py-1 bg-green-500 text-white text-sm font-medium rounded-full hover:bg-green-600 transition">Link Verifica</a>
+                                <button onclick="copyLink('${exam.link}')" class="text-indigo-500 hover:text-indigo-700 transition">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H9a2 2 0 01-2-2V9z" /><path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h6a2 2 0 00-2-2H5z" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            // Trigger the listener for the teacher's saved exams
+            setupTeacherExamsListener();
+        }
+
+        // Funzione globale per copiare il link (richiesta dal pulsante dinamico)
+        window.copyLink = (link) => {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(link).then(() => {
+                    showMessage("Link copiato negli appunti!", 'info');
+                }).catch(err => {
+                    console.error('Could not copy text: ', err);
+                });
+            } else {
+                // Fallback per ambienti senza supporto clipboard
+                const textarea = document.createElement('textarea');
+                textarea.value = link;
+                document.body.appendChild(textarea);
+                textarea.select();
+                try {
+                    document.execCommand('copy');
+                    showMessage("Link copiato (metodo fallback).", 'info');
+                } catch (err) {
+                    showMessage("Impossibile copiare il link. Copia manualmente: " + link, 'error');
+                }
+                document.body.removeChild(textarea);
+            }
+        };
+
+        function setupTeacherExamsListener() {
+            if (!db || !userId) return;
+
+            const q = query(collection(db, `artifacts/${appId}/public/data/exams`), where("teacherId", "==", userId));
+            
+            onSnapshot(q, (snapshot) => {
+                const exams = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    exams.push({
+                        ...data,
+                        link: `${window.location.origin}${window.location.pathname}?exam=${data.examId}`
+                    });
+                });
+                renderTeacherDashboard(exams);
+            }, (error) => {
+                console.error("Errore nel listener Firestore:", error);
+                showMessage("Errore nel caricamento della dashboard docente.", 'error');
+            });
+        }
+
+        function renderTeacherDashboard(exams) {
+            const dashboardContainer = document.getElementById('teacher-dashboard');
+            if (!dashboardContainer) return;
+            
+            const completedExams = exams.filter(e => e.submission && e.submission.totalScore !== undefined);
+            const pendingExams = exams.filter(e => !e.submission || e.submission.totalScore === undefined);
+
+            dashboardContainer.innerHTML = `
+                <h2 class="text-3xl font-extrabold text-gray-900 mb-6">Area Docente: Gestione Verifiche</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <div class="bg-indigo-50 p-6 rounded-xl border-l-4 border-indigo-600 shadow-md">
+                        <p class="text-sm font-medium text-indigo-700">Verifiche Totali Generate</p>
+                        <p class="text-4xl font-bold text-indigo-900">${exams.length}</p>
+                    </div>
+                    <div class="bg-green-50 p-6 rounded-xl border-l-4 border-green-600 shadow-md">
+                        <p class="text-sm font-medium text-green-700">Verifiche Corrette e Consegnate</p>
+                        <p class="text-4xl font-bold text-green-900">${completedExams.length}</p>
+                    </div>
+                </div>
+
+                <!-- Tabella delle Verifiche Completate -->
+                <h3 class="text-2xl font-semibold text-gray-800 mb-4 mt-8">Verifiche Corrette (${completedExams.length})</h3>
+                <div class="overflow-x-auto bg-white rounded-lg shadow">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Classe/Studente</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Argomento</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Punteggio</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Voto (1-10)</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Azione</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${completedExams.map(exam => `
+                                <tr>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        Cl. ${exam.class} / Stud. ${exam.studentNumber}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        ${exam.topic.substring(0, 40)}...
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        ${exam.submission.totalScore} / 120
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-bold ${exam.submission.grade >= 6 ? 'text-green-600' : 'text-red-600'}">
+                                        ${exam.submission.grade.toFixed(2)}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <button onclick="viewExam('${exam.examId}')" class="text-indigo-600 hover:text-indigo-900">Vedi Dettagli</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Tabella delle Verifiche Pendenti -->
+                <h3 class="text-2xl font-semibold text-gray-800 mb-4 mt-8">Verifiche in Attesa (${pendingExams.length})</h3>
+                <div class="overflow-x-auto bg-white rounded-lg shadow">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Classe/Studente</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Argomento</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Link</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${pendingExams.map(exam => `
+                                <tr>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        Cl. ${exam.class} / Stud. ${exam.studentNumber}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        ${exam.topic.substring(0, 40)}...
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <a href="${exam.link}" target="_blank" class="text-indigo-600 hover:text-indigo-900">Apri</a>
+                                        <button onclick="copyLink('${exam.link}')" class="ml-2 text-gray-400 hover:text-gray-600">
+                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline" viewBox="0 0 20 20" fill="currentColor"><path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H9a2 2 0 01-2-2V9z" /><path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h6a2 2 0 00-2-2H5z" /></svg>
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        // Funzione per visualizzare i dettagli di una verifica (riusa la logica di stampa)
+        window.viewExam = async (examId) => {
+            const docRef = doc(db, `artifacts/${appId}/public/data/exams`, examId);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists() && docSnap.data().submission) {
+                const examData = docSnap.data();
+                const printHtml = generatePrintableExam(examData, examData.submission);
+                
+                const printWindow = window.open('', '_blank');
+                printWindow.document.write(printHtml);
+                printWindow.document.close();
+            } else {
+                showMessage('Dati di correzione non trovati per questa verifica.', 'error');
+            }
+        };
+
+        function renderTeacherView() {
+            document.getElementById('app').innerHTML = `
+                <div class="flex flex-col md:flex-row max-w-7xl mx-auto p-4 md:p-8 space-y-8 md:space-y-0 md:space-x-8">
+                    
+                    <!-- Dashboard (Sinistra) -->
+                    <div class="md:w-3/5 bg-gray-50 p-6 rounded-2xl shadow-xl order-2 md:order-1" id="teacher-dashboard">
+                        <!-- Contenuto dashboard caricato dal listener -->
+                        <div class="text-center p-10"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto"></div><p class="mt-3 text-indigo-600">Caricamento Dashboard...</p></div>
+                    </div>
+
+                    <!-- Generatore (Destra) -->
+                    <div class="md:w-2/5 order-1 md:order-2">
+                        <div class="bg-white p-6 rounded-2xl shadow-xl">
+                            <h2 class="text-2xl font-bold text-indigo-600 mb-6">Generatore Verifiche AI</h2>
+                            <form id="generator-form" class="space-y-6">
+                                <div>
+                                    <label for="topic" class="block text-sm font-medium text-gray-700 mb-2">Argomento Dettagliato (Testo Lungo)</label>
+                                    <textarea id="topic" name="topic" rows="6" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3" placeholder="Es: 'Analisi della complessità computazionale dell'algoritmo QuickSort, con focus sul caso peggiore e sull'ottimizzazione tramite pivot casuale.'"></textarea>
+                                    <p class="text-xs text-gray-500 mt-1">Fornisci quanti più dettagli possibili per esercizi complessi e universitari.</p>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-3">Numero di Studenti per Classe:</label>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        ${[1, 2, 3, 5].map(cls => `
+                                            <div>
+                                                <label for="class${cls}" class="block text-xs font-semibold text-gray-600">Classe ${cls}°</label>
+                                                <input type="number" id="class${cls}" name="class${cls}" min="0" value="0" class="mt-1 w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 text-center" required>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-2">Totale domande per verifica: 20 (10 Intermedie/4pt, 5 Difficili/6pt, 5 Difficilissime/10pt. Totale Max: 120 punti).</p>
+                                </div>
+                                
+                                <button type="submit" id="generate-button" class="w-full px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-lg hover:bg-indigo-700 transition duration-300">
+                                    Genera Verifiche Dettagliate
+                                </button>
+                            </form>
+                        </div>
+                        
+                        <!-- Risultati Generazione (Link) -->
+                        <div id="generation-results" class="hidden mt-8 p-6 bg-indigo-50 rounded-2xl shadow-xl">
+                            <!-- Contenuto generato dinamicamente dopo il successo -->
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('generator-form').onsubmit = handleGenerateExams;
+            setupTeacherExamsListener();
+        }
+
+        // --- Routing e Inizializzazione Principale (MODIFICATO) ---
+
+        onAuthStateChanged(auth, async (user) => {
+            isAuthReady = true;
+            if (user) {
+                userId = user.uid;
+                const urlParams = new URLSearchParams(window.location.search);
+                const examId = urlParams.get('exam');
+
+                if (examId) {
+                    // Vista Studente
+                    renderStudentView(examId);
+                } else {
+                    // Vista Docente
+                    renderTeacherView();
+                }
+            } else {
+                // Autenticazione anonima per stabilire un userId (Docente)
+                try {
+                    await signInAnonymously(auth);
+                } catch (error) {
+                    console.error("Errore Autenticazione Anonima:", error);
+                    document.getElementById('app').innerHTML = '<div class="p-6 text-red-600 bg-red-100 rounded-lg">Errore di Autenticazione. Impossibile accedere a Firebase.</div>';
+                }
+            }
+        });
+        
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f9;
+        }
+        .container-main {
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body class="container-main">
+    <div id="message-box" class="fixed top-4 right-4 z-50 w-full max-w-sm hidden"></div>
+    <div id="app" class="pt-4 pb-12">
+        <div class="text-center p-10 mt-10">
+            <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-500 mx-auto"></div>
+            <h2 class="text-xl font-semibold text-indigo-700 mt-4">Caricamento Applicazione...</h2>
+            <p class="text-sm text-gray-500">Inizializzazione servizi Firebase e AI.</p>
+        </div>
+    </div>
+</body>
+</html>
