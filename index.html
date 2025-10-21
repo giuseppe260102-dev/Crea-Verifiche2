@@ -273,7 +273,7 @@
                         <h2 class="text-lg font-bold mb-2 text-green-700">Risultato Finale della Correzione AI</h2>
                         ${correctionData.isAutoPenalized ? `
                             <p class="text-sm critical-violation mb-3">
-                                ❌ VERIFICA ANNULLATA: Rilevata **violazione delle regole Anti-Fuga** (cambio di finestra/tab). Punteggio e Voto Azzerati.
+                                ❌ VERIFICA ANNULLATA: Rilevata violazione delle regole Anti-Fuga (cambio di finestra/tab). Punteggio e Voto Azzerati.
                             </p>
                         ` : ''}
                         <p class="text-sm">Punteggio Totale Ottenuto: <span class="score-achieved text-xl">${correctionData.totalScore} / 120</span></p>
@@ -311,7 +311,7 @@
                                 
                                 <!-- SEGNALAZIONE AGGIORNATA PER PUNTEGGIO ZERO -->
                                 ${correction.aiDetected || correctionData.isAutoPenalized ? `<p class="text-xs ai-detected">
-                                    🔴 ATTENZIONE: Rilevata **alta probabilità** di risposta/codice (C++) generato da AI, O **Violazione Anti-Fuga** CRITICA. Punti assegnati: 0. 
+                                    🔴 ATTENZIONE: Rilevata alta probabilità di risposta/codice (C++) generato da AI, O Violazione Anti-Fuga CRITICA. Punti assegnati: 0. 
                                     (Segnalato al docente per verifica finale).
                                 </p>` : ''}
                                 
@@ -447,9 +447,9 @@
                         ATTENZIONE CRITICA: Modalità Esame Attiva (Anti-Copia e AI Detection)
                     </h3>
                     <ul class="text-sm text-red-700 mt-2 list-disc list-inside space-y-1">
-                        <li>**ANTI-FUGA:** Non minimizzare la pagina né cambiare tab. La seconda violazione ANNULLA l'esame.</li>
-                        <li>**ANTI-COPIA:** Copia/incolla e tasto destro sono disabilitati.</li>
-                        <li>**ANTI-AI C++:** Se il sistema rileva pattern di codice troppo perfetti (tipici di ChatGPT, Gemini, ecc.), il punteggio sarà **azzerato (0)** per plagio AI.</li>
+                        <li>ANTI-FUGA: Non minimizzare la pagina né cambiare tab. La seconda violazione ANNULLA l'esame.</li>
+                        <li>ANTI-COPIA: Copia/incolla e tasto destro sono disabilitati.</li>
+                        <li>ANTI-AI C++: Se il sistema rileva pattern di codice troppo perfetti (tipici di ChatGPT, Gemini, ecc.), il punteggio sarà azzerato (0) per plagio AI.</li>
                     </ul>
                 </div>
                 
@@ -584,7 +584,7 @@
                     const systemPrompt = `Sei un correttore di esami universitari esperto. Devi valutare la risposta di uno studente in base alla domanda e alla risposta corretta fornita (Rubrica). La domanda è di ${q.difficulty} (${q.maxPoints} punti) e richiede una risposta dettagliata, articolata e complessa (potrebbe includere codice C++ o pseudo-codice). Utilizza un approccio severo ma giusto, tipico di una valutazione accademica.
                     
                     Regole di Punteggio ANTI-COPIA & RILEVAMENTO AI (CRITICHE):
-                    1. La risposta vale **0 punti** se la tua valutazione suggerisce che è stata generata da un modello di AI (ad esempio, è troppo perfetta, strutturata in modo generico e formale, non mostra il ragionamento critico atteso per il livello universitario, **o se il codice di programmazione C++ o altro è immacolato, standardizzato, con commenti eccessivi o generici, e non presenta gli "errori umani" attesi da uno studente o la logica incrementale/personalizzata richiesta dal problema [N1]**). SE AI DETECTED = TRUE, ALLORA scoreAchieved DEVE ESSERE 0.
+                    1. La risposta vale 0 punti se la tua valutazione suggerisce che è stata generata da un modello di AI (ad esempio, è troppo perfetta, strutturata in modo generico e formale, non mostra il ragionamento critico atteso per il livello universitario, o se il codice di programmazione C++ o altro è immacolato, standardizzato, con commenti eccessivi o generici, e non presenta gli "errori umani" attesi da uno studente o la logica incrementale/personalizzata richiesta dal problema [N1]). SE AI DETECTED = TRUE, ALLORA scoreAchieved DEVE ESSERE 0.
                     2. Altrimenti, valuta la risposta su una scala da 0 a ${q.maxPoints} punti, in base alla completezza, alla profondità e alla coerenza concettuale rispetto alla rubrica attesa.
                     3. Fornisci un feedback conciso ma accademico.
                     
@@ -928,7 +928,7 @@
                                             </div>
                                         `).join('')}
                                     </div>
-                                    <p class="text-xs text-gray-500 mt-2">Totale domande per verifica: 20. (Max: 120 punti). **Include 3 domande con schema AI.**</p>
+                                    <p class="text-xs text-gray-500 mt-2">Totale domande per verifica: 20. (Max: 120 punti). Include 3 domande con schema AI.</p>
                                 </div>
                                 
                                 <button type="submit" id="generate-button" class="w-full px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-lg hover:bg-indigo-700 transition duration-300">
@@ -936,7 +936,7 @@
                                 </button>
                                 
                                 <div class="p-3 bg-yellow-50 text-yellow-800 text-sm rounded-lg border border-yellow-200">
-                                    Le verifiche generate saranno automaticamente **personalizzate (Anti-Copia)** per ogni studente con valori numerici diversi e dotate di **rilevamento AI**.
+                                    Le verifiche generate saranno automaticamente personalizzate (Anti-Copia) per ogni studente con valori numerici diversi e dotate di rilevamento AI.
                                 </div>
                             </form>
                         </div>
