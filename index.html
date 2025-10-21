@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generatore di Verifiche Avanzato (Docente)</title>
+    <!-- Caricamento di Tailwind CSS per lo styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+        /* Stili personalizzati per il PDF */
+        .pdf-content { padding: 20px; font-family: 'Times New Roman', serif; }
+        .pdf-header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        .pdf-grade { font-size: 24px; font-weight: bold; color: #1e40af; margin-top: 15px; }
+        .pdf-rubric-table th, .pdf-rubric-table td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 10px; }
+        .pdf-rubric-table th { background-color: #f0f0f0; }
+        .input-group { margin-bottom: 1rem; }
+        .btn-primary { background-color: #4f46e5; color: white; transition: background-color 0.2s; }
+        .btn-primary:hover { background-color: #4338ca; }
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen">
+
+    <div id="app" class="max-w-4xl mx-auto bg-white shadow-2xl rounded-xl p-6 md:p-10">
+        <header class="mb-8 border-b pb-4">
+            <h1 class="text-3xl font-extrabold text-gray-900 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-indigo-600 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                </svg>
+                Generatore Verifiche Avanzato
+            </h1>
+            <p id="auth-status" class="text-sm text-gray-500 mt-1"></p>
+        </header>
+
+        <!-- Contenitore Principale (Vista Docente) -->
+        <div id="teacher-view" class="space-y-8">
+            <h2 class="text-2xl font-semibold text-indigo-700">Area Docente</h2>
+            <div id="status-message" class="hidden p-4 rounded-lg text-sm" role="alert"></div>
+
+            <!-- Form di Generazione -->
+            <div id="generation-form" class="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                <h3 class="text-xl font-bold mb-4 text-gray-800">Parametri di Generazione</h3>
+
+                <div class="input-group">
+                    <label for="topic" class="block text-sm font-medium text-gray-700 mb-1">Argomento Dettagliato (Testo descrittivo, max 1000 parole. Più dettagliato è il testo, migliore sarà la verifica.)</label>
+                    <textarea id="topic" rows="5" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm" placeholder="Es: 'La teoria della relatività ristretta di Einstein. Includi dettagli sulle trasformazioni di Lorentz, il concetto di dilatazione del tempo e la formula E=mc². Focalizzati su esercizi teorici e pratici di livello universitario.'"></textarea>
+                    <p class="text-xs text-gray-500 mt-1">Puoi anche incollare il link a un'immagine nell'argomento per creare esercizi complessi basati sull'immagine.</p>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div class="input-group">
+                        <label for="num-tests" class="block text-sm font-medium text-gray-700 mb-1">Numero Totale di Verifiche da Generare (N° Studenti)</label>
+                        <input type="number" id="num-tests" value="5" min="1" max="20" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" required>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="class-level" class="block text-sm font-medium text-gray-700 mb-1">Livello/Classe di Riferimento</label>
+                        <select id="class-level" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                            <option value="Universitario">Università / Livello Avanzato</option>
+                            <option value="Quinta Superiore">Classe 5° Superiore</option>
+                            <option value="Terza Superiore">Classe 3° Superiore</option>
+                            <option value="Seconda Superiore">Classe 2° Superiore</option>
+                            <option value="Prima Superiore">Classe 1° Superiore</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <p class="text-xs text-indigo-600 font-medium">Nota: Verranno generate automaticamente 20 domande per verifica: 10 Intermedie, 5 Difficili e 5 Difficilissime, di varie tipologie (A completamento, V/F, Esercizi, Domande con immagini/scenari).</p>
+                </div>
+
+                <button id="generate-button" onclick="handleGenerateTests()" class="w-full mt-6 btn-primary p-3 rounded-lg font-semibold flex items-center justify-center">
+                    <span id="button-text">Genera Verifiche (20 Domande Ciascuna)</span>
+                    <svg id="spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Lista Verifiche Generata -->
+            <div class="mt-8">
+                <h3 class="text-2xl font-bold mb-4 text-gray-800 flex items-center">
+                    Verifiche Generate
+                    <span class="ml-3 text-sm font-medium px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full" id="test-count">0</span>
+                </h3>
+                <div id="tests-list" class="space-y-4">
+                    <p id="no-tests-message" class="text-gray-500 italic">Nessuna verifica generata. Inizia compilando il modulo sopra.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contenitore Secondario (Vista Studente) -->
+        <div id="student-view" class="hidden">
+             <!-- Il contenuto della verifica per lo studente sarà caricato qui dinamicamente -->
+        </div>
+
+        <!-- Modale di Messaggio -->
+        <div id="message-modal" class="fixed inset-0 bg-gray-600 bg-opacity-75 hidden items-center justify-center z-50">
+            <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
+                <h3 id="modal-title" class="text-xl font-bold mb-4 text-gray-800">Messaggio</h3>
+                <p id="modal-body" class="text-gray-600 mb-6"></p>
+                <button onclick="document.getElementById('message-modal').classList.add('hidden')" class="btn-primary p-2 w-full rounded-lg">Chiudi</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Script CDN per Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Inizializzazione Globale di Firebase (MANDATORY)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        
+        if (Object.keys(firebaseConfig).length > 0) {
+            window.app = initializeApp(firebaseConfig);
+            window.db = getFirestore(window.app);
+            window.auth = getAuth(window.app);
+            setLogLevel('Debug'); // Abilita il logging per Firestore
+            
+            // Stato di Autenticazione
+            onAuthStateChanged(window.auth, async (user) => {
+                const authStatusEl = document.getElementById('auth-status');
+                if (user) {
+                    window.userId = user.uid;
+                    authStatusEl.innerHTML = `Accesso Docente (ID: <span class="font-mono text-indigo-600">${window.userId}</span>). <span class="text-red-500">Condividi questo ID per collaborare, ma non la tua verifica.</span>`;
+                    // Carica le verifiche dopo l'autenticazione
+                    loadTests();
+                } else {
+                    window.userId = 'unknown'; // Sarà sovrascritto dalla signIn
+                    authStatusEl.textContent = 'Autenticazione in corso...';
+
+                    // Autenticazione Iniziale (MANDATORY)
+                    try {
+                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(window.auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(window.auth);
+                        }
+                    } catch (error) {
+                        console.error("Errore di autenticazione:", error);
+                        authStatusEl.textContent = 'Errore di autenticazione.';
+                    }
+                }
+            });
+        } else {
+             document.getElementById('auth-status').textContent = 'Configurazione Firebase non trovata.';
+        }
+        
+        // Collezione Firestore (Privata del Docente)
+        window.getTestsCollection = (uid) => collection(window.db, `artifacts/${appId}/users/${uid}/verifiche`);
+
+        // Funzione per caricare i test in tempo reale
+        window.loadTests = () => {
+            if (!window.userId || window.userId === 'unknown' || !window.db) return;
+
+            const q = query(window.getTestsCollection(window.userId));
+            onSnapshot(q, (snapshot) => {
+                const testsListEl = document.getElementById('tests-list');
+                const noTestsMessage = document.getElementById('no-tests-message');
+                const testCountEl = document.getElementById('test-count');
+                
+                let html = '';
+                const tests = [];
+                snapshot.forEach(doc => {
+                    tests.push({ id: doc.id, ...doc.data() });
+                });
+
+                tests.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+
+                testCountEl.textContent = tests.length;
+
+                if (tests.length === 0) {
+                    noTestsMessage.classList.remove('hidden');
+                } else {
+                    noTestsMessage.classList.add('hidden');
+                    tests.forEach((test, index) => {
+                        const studentLink = `${window.location.origin}${window.location.pathname}#student-${test.id}`;
+                        const statusColor = test.isCorrected ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800';
+                        const statusText = test.isCorrected ? `Corretta (Voto: ${test.grade}/10)` : 'In attesa di compilazione';
+
+                        html += `
+                            <div class="bg-white p-4 border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition duration-150">
+                                <h4 class="font-bold text-lg text-indigo-700">Verifica #${tests.length - index}</h4>
+                                <p class="text-sm text-gray-600 truncate">${test.topicTitle || 'Argomento non specificato'}</p>
+                                <div class="mt-2 text-xs font-medium ${statusColor} px-2 py-1 rounded-full inline-block">${statusText}</div>
+                                
+                                <div class="mt-3 flex flex-wrap gap-2 items-center">
+                                    <button onclick="copyToClipboard('${studentLink}', this)" class="text-indigo-600 hover:text-indigo-800 text-sm font-medium flex items-center transition duration-150 p-2 border border-indigo-200 rounded-lg bg-indigo-50">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.814a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                                        Link Studente
+                                    </button>
+                                    ${test.isCorrected ? `<button onclick="window.generatePDF('${test.id}', true, '${test.topicTitle}')" class="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center transition duration-150 p-2 border border-blue-200 rounded-lg bg-blue-50">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                        Scarica PDF Corretto
+                                    </button>` : `<span class="text-xs text-red-500 ml-2">Correzione non disponibile</span>`}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    testsListEl.innerHTML = html;
+                }
+            });
+        };
+    </script>
+
+    <!-- Script CDN per jspdf (per la creazione del PDF) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <!-- Logica di Generazione, Correzione e Interfaccia -->
+    <script type="text/javascript">
+        // Costanti
+        const API_URL_BASE = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=`;
+        const API_KEY = ""; // Lasciare vuoto. Verrà iniettata dall'ambiente Canvas.
+        
+        const NUM_QUESTIONS = 20;
+        const DIFFICULTY_SPLIT = { intermediate: 10, difficult: 5, veryDifficult: 5 };
+
+        /**
+         * Funzione di utilità per la copia negli appunti.
+         */
+        function copyToClipboard(text, button) {
+            try {
+                // Utilizza document.execCommand('copy') per compatibilità iFrame
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+
+                const originalText = button.innerHTML;
+                button.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Copiato!';
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                }, 2000);
+
+            } catch (err) {
+                console.error('Errore nella copia: ', err);
+                showMessage('Errore', 'Impossibile copiare il link. Si prega di copiarlo manualmente dalla console.', 'red');
+            }
+        }
+
+        /**
+         * Gestisce la visualizzazione dei messaggi (simulazione di alert/confirm).
+         */
+        function showMessage(title, body, type = 'blue') {
+            const modal = document.getElementById('message-modal');
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-body').innerHTML = body;
+            
+            const statusMessageEl = document.getElementById('status-message');
+            statusMessageEl.classList.remove('hidden', 'bg-red-100', 'text-red-800', 'bg-yellow-100', 'text-yellow-800', 'bg-blue-100', 'text-blue-800', 'bg-green-100', 'text-green-800');
+
+            let bgColor, textColor;
+            if (type === 'red') { bgColor = 'bg-red-100'; textColor = 'text-red-800'; }
+            else if (type === 'yellow') { bgColor = 'bg-yellow-100'; textColor = 'text-yellow-800'; }
+            else if (type === 'green') { bgColor = 'bg-green-100'; textColor = 'text-green-800'; }
+            else { bgColor = 'bg-blue-100'; textColor = 'text-blue-800'; }
+
+            statusMessageEl.classList.add(bgColor, textColor);
+            statusMessageEl.innerHTML = `<p class="font-bold">${title}</p><p>${body}</p>`;
+        }
+
+
+        /**
+         * Funzione per la chiamata all'API di Gemini con backoff esponenziale.
+         */
+        async function callGeminiApi(payload, retries = 3) {
+            const apiUrl = `${API_URL_BASE}${API_KEY}`;
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        if (response.status === 429 && i < retries - 1) { // Too many requests
+                            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            continue;
+                        }
+                        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                    }
+
+                    const result = await response.json();
+                    if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
+                        return result.candidates[0].content.parts[0].text;
+                    }
+                    throw new Error("Risposta dall'API in formato non valido o vuota.");
+
+                } catch (error) {
+                    console.error(`Tentativo ${i + 1} fallito:`, error);
+                    if (i === retries - 1) throw error;
+                    const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+
+        /**
+         * 1. Genera la struttura JSON della verifica usando Gemini.
+         * 2. Salva la verifica nel Firestore.
+         */
+        async function handleGenerateTests() {
+            const topic = document.getElementById('topic').value.trim();
+            const numTests = parseInt(document.getElementById('num-tests').value, 10);
+            const classLevel = document.getElementById('class-level').value;
+
+            if (!topic) { showMessage('Errore', 'Per favore, inserisci un argomento dettagliato.', 'red'); return; }
+            if (numTests < 1) { showMessage('Errore', 'Il numero di verifiche deve essere almeno 1.', 'red'); return; }
+
+            const generateButton = document.getElementById('generate-button');
+            const buttonText = document.getElementById('button-text');
+            const spinner = document.getElementById('spinner');
+
+            generateButton.disabled = true;
+            buttonText.textContent = `Generazione di ${numTests} Verifiche in Corso...`;
+            spinner.classList.remove('hidden');
+            showMessage('Generazione in corso', 'Sto creando la struttura della verifica, le domande, le risposte e la griglia di valutazione. Questo può richiedere fino a 30 secondi per ogni verifica.', 'yellow');
+
+
+            const systemInstruction = {
+                parts: [{
+                    text: `Sei un esperto accademico e creatore di test di livello universitario. Il tuo compito è generare una verifica complessa e articolata di ${NUM_QUESTIONS} domande, suddivise in: 
+                    - ${DIFFICULTY_SPLIT.intermediate} domande Intermedie
+                    - ${DIFFICULTY_SPLIT.difficult} domande Difficili
+                    - ${DIFFICULTY_SPLIT.veryDifficult} domande Difficilissime.
+                    
+                    Le tipologie di domande devono essere miste: A completamento, Vero/Falso, a Risposta Multipla (con e senza immagini), Esercizi Pratici, e Domande Teoriche (es. 'Fornisci un esempio di...'). Assicurati che le domande siano di alto livello e stimolino il pensiero critico.
+                    
+                    Devi rispondere ESCLUSIVAMENTE con un oggetto JSON che rispetti lo schema fornito, senza alcuna introduzione o spiegazione aggiuntiva.
+                    Il punteggio totale è 100 punti. Ogni domanda avrà un peso proporzionale alla sua difficoltà.`
+                }]
+            };
+
+            const userQuery = `Genera il contenuto della verifica per il livello "${classLevel}" sull'argomento dettagliato: "${topic}".`;
+
+            const testSchema = {
+                type: "OBJECT",
+                properties: {
+                    topicTitle: { type: "STRING", description: "Titolo conciso basato sull'argomento." },
+                    questions: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                id: { type: "STRING", description: "ID univoco della domanda (es. 'q1', 'q2')." },
+                                type: { type: "STRING", description: "Tipo di domanda (es. 'Completamento', 'Vero/Falso', 'Risposta Multipla', 'Esercizio Pratico')." },
+                                text: { type: "STRING", description: "Testo della domanda. Includi il riferimento all'immagine se applicabile (es. 'Osserva l'immagine a: <Link Immagine>')." },
+                                correct_answer: { type: "STRING", description: "La risposta corretta dettagliata (per domande aperte) o l'opzione corretta (per risposte multiple/V/F)." },
+                                points: { type: "NUMBER", description: "Punteggio massimo ottenibile per la domanda (tra 1 e 100/20)." },
+                                options: {
+                                    type: "ARRAY",
+                                    items: { type: "STRING" },
+                                    description: "Solo per Risposta Multipla: le opzioni tra cui scegliere."
+                                }
+                            },
+                            required: ["id", "type", "text", "correct_answer", "points"]
+                        }
+                    },
+                    gradingRubric: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                criteria: { type: "STRING", description: "Criterio di valutazione generale (es. 'Correttezza Concettuale', 'Profondità dell'Analisi', 'Rilevamento AI')." },
+                                maxPoints: { type: "NUMBER", description: "Punti massimi per il criterio." },
+                                description: { type: "STRING", description: "Descrizione dettagliata su come assegnare il punteggio per questo criterio." }
+                            }
+                        }
+                    }
+                },
+                required: ["topicTitle", "questions", "gradingRubric"]
+            };
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: systemInstruction,
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: testSchema
+                },
+            };
+
+            const generatedTests = [];
+            for (let i = 0; i < numTests; i++) {
+                try {
+                    showMessage('Generazione in corso', `Sto creando la Verifica ${i + 1} di ${numTests}...`, 'yellow');
+                    const jsonResponse = await callGeminiApi(payload);
+                    const testData = JSON.parse(jsonResponse);
+                    
+                    // Salva su Firestore
+                    const docRef = await addDoc(window.getTestsCollection(window.userId), {
+                        ...testData,
+                        topicDetails: topic,
+                        classLevel: classLevel,
+                        totalQuestions: NUM_QUESTIONS,
+                        isCorrected: false,
+                        studentAnswers: null,
+                        grade: null,
+                        createdAt: serverTimestamp(),
+                    });
+                    
+                    generatedTests.push(docRef.id);
+                    showMessage('Successo', `Verifica #${i + 1} salvata con ID: ${docRef.id}.`, 'green');
+
+                } catch (error) {
+                    console.error("Errore durante la generazione/salvataggio del test:", error);
+                    showMessage('Errore Critico', `Impossibile generare la verifica #${i + 1}. Controlla la console per i dettagli.`, 'red');
+                    break;
+                }
+            }
+
+
+            generateButton.disabled = false;
+            buttonText.textContent = 'Genera Verifiche (20 Domande Ciascuna)';
+            spinner.classList.add('hidden');
+
+            if (generatedTests.length === numTests) {
+                 showMessage('Generazione Completata', `${numTests} verifiche sono state generate e salvate con successo. I link per gli studenti sono ora disponibili nella lista sottostante.`, 'green');
+            }
+        }
+
+
+        /**
+         * 2. Carica e visualizza la vista Studente.
+         */
+        window.showStudentView = async (testId) => {
+            if (!window.db || !window.userId) { showMessage('Errore', 'Sistema non inizializzato.', 'red'); return; }
+
+            document.getElementById('teacher-view').classList.add('hidden');
+            const studentViewEl = document.getElementById('student-view');
+            studentViewEl.classList.remove('hidden');
+            studentViewEl.innerHTML = `
+                <div class="flex items-center text-indigo-600 mb-6 cursor-pointer hover:underline" onclick="window.location.hash = ''">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" /></svg>
+                    Torna all'Area Docente
+                </div>
+                <h2 class="text-3xl font-extrabold text-gray-900 mb-2">Compilazione Verifica</h2>
+                <p class="text-gray-500 mb-8">Caricamento verifica ${testId}...</p>
+                <div id="student-test-content" class="bg-white p-6 rounded-xl shadow-lg">
+                    <div class="flex justify-center items-center h-48"><svg class="animate-spin h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+                </div>
+            `;
+
+            const testDocRef = doc(window.getTestsCollection(window.userId), testId);
+            const testDoc = await getDoc(testDocRef);
+
+            if (!testDoc.exists()) {
+                studentViewEl.innerHTML = `<p class="text-red-600 font-bold mt-10">Errore: Verifica non trovata.</p>`;
+                return;
+            }
+
+            const testData = testDoc.data();
+            renderTestForm(testId, testData);
+        };
+
+        /**
+         * Renderizza il modulo per lo studente.
+         */
+        function renderTestForm(testId, testData) {
+            const contentEl = document.getElementById('student-test-content');
+            
+            if (testData.isCorrected) {
+                // Se la verifica è corretta, mostra il risultato finale
+                 contentEl.innerHTML = `
+                    <h3 class="text-2xl font-bold text-green-700 mb-4">Verifica Già Corretta</h3>
+                    <p class="text-lg mb-6">Caro studente, la tua verifica è già stata corretta.</p>
+                    <div class="bg-green-50 p-4 rounded-lg text-center mb-6">
+                        <p class="text-4xl font-extrabold text-green-800">${testData.grade}/10</p>
+                        <p class="text-sm text-green-700">Voto Finale</p>
+                    </div>
+                    <button onclick="window.generatePDF('${testId}', true, '${testData.topicTitle}')" class="w-full btn-primary p-3 rounded-lg font-semibold flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                        Scarica PDF Corretto e Griglia
+                    </button>
+                 `;
+                 return;
+            }
+
+
+            let formHTML = `
+                <h3 class="text-2xl font-bold text-gray-800">${testData.topicTitle}</h3>
+                <p class="text-sm text-gray-500 mb-6">Livello: ${testData.classLevel} | Domande: ${testData.totalQuestions}</p>
+                <form id="student-answer-form" onsubmit="event.preventDefault(); window.submitTest('${testId}')" class="space-y-8">
+            `;
+
+            testData.questions.forEach((q, index) => {
+                formHTML += `
+                    <div class="border p-4 rounded-lg shadow-sm">
+                        <p class="text-base font-semibold text-gray-700 mb-2">Domanda ${index + 1} (${q.type} - ${q.points} punti)</p>
+                        <p class="mb-4 text-gray-900">${q.text}</p>
+                `;
+
+                if (q.type.includes('Multipla')) {
+                    formHTML += `<div class="space-y-2">`;
+                    q.options.forEach((option, oIndex) => {
+                        formHTML += `
+                            <label class="flex items-center">
+                                <input type="radio" name="q${q.id}" value="${option}" class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500" required>
+                                <span class="ml-3 text-sm font-medium text-gray-700">${option}</span>
+                            </label>
+                        `;
+                    });
+                    formHTML += `</div>`;
+                } else if (q.type.includes('Vero/Falso')) {
+                    formHTML += `
+                        <div class="flex space-x-4">
+                            <label class="flex items-center">
+                                <input type="radio" name="q${q.id}" value="Vero" class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500" required>
+                                <span class="ml-3 text-sm font-medium text-gray-700">Vero</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="q${q.id}" value="Falso" class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500" required>
+                                <span class="ml-3 text-sm font-medium text-gray-700">Falso</span>
+                            </label>
+                        </div>
+                    `;
+                } else {
+                    // Risposta aperta (Completamento, Esercizio Pratico, Teorico)
+                    formHTML += `<textarea name="q${q.id}" rows="4" class="w-full p-3 border border-gray-300 rounded-lg mt-2 text-sm" placeholder="Inserisci la tua risposta dettagliata qui..." required></textarea>`;
+                }
+
+                formHTML += `</div>`;
+            });
+
+            formHTML += `
+                    <button id="submit-button" type="submit" class="w-full btn-primary p-3 rounded-lg font-semibold flex items-center justify-center">
+                        <span id="submit-button-text">Invia Verifica e Avvia Correzione Automatica</span>
+                        <svg id="submit-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </button>
+                </form>
+            `;
+            contentEl.innerHTML = formHTML;
+        }
+
+        /**
+         * 3. Gestisce l'invio della verifica da parte dello studente.
+         */
+        window.submitTest = async (testId) => {
+            const form = document.getElementById('student-answer-form');
+            const formData = new FormData(form);
+            const answers = {};
+
+            // Raccogli le risposte
+            const testDocRef = doc(window.getTestsCollection(window.userId), testId);
+            const testDoc = await getDoc(testDocRef);
+            const testData = testDoc.data();
+
+            testData.questions.forEach(q => {
+                const formName = `q${q.id}`;
+                answers[q.id] = formData.get(formName) || '';
+            });
+
+            const submitButton = document.getElementById('submit-button');
+            const buttonText = document.getElementById('submit-button-text');
+            const spinner = document.getElementById('submit-spinner');
+
+            submitButton.disabled = true;
+            buttonText.textContent = `Correzione in corso (Attendi)...`;
+            spinner.classList.remove('hidden');
+
+            // Avvia la Correzione (Passo 4)
+            await correctTest(testId, testData, answers, submitButton, buttonText, spinner);
+        };
+
+        /**
+         * 4. Correzione Automatica con Rilevamento AI.
+         */
+        async function correctTest(testId, testData, studentAnswers, submitButton, buttonText, spinner) {
+            const totalMaxPoints = testData.questions.reduce((sum, q) => sum + q.points, 0);
+            let totalScore = 0;
+            const correctedDetails = [];
+            const gradingPromises = [];
+
+            // 4a. Imposta la System Instruction per la Correzione e il Rilevamento AI
+            const correctionSystemInstruction = {
+                parts: [{
+                    text: `Sei un correttore esperto e imparziale. Devi valutare la risposta dello studente in base alla domanda, alla risposta corretta e alla griglia di valutazione.
+                    Punti Massimi per la Domanda: ${testData.questions[0].points} (varia per domanda).
+                    Griglia di Valutazione Generale (da applicare): ${JSON.stringify(testData.gradingRubric)}.
+                    
+                    REGOLA FONDAMENTALE: Se la risposta fornita dallo studente appare come un testo generico, troppo formale, o non sufficientemente specifico che potrebbe essere stato generato da una IA senza una reale comprensione, ASSEGNA 0 PUNTI. Se la risposta mostra originalità, specificità e un reale sforzo concettuale, assegna il punteggio in base alla sua accuratezza e completezza.
+
+                    Rispondi ESCLUSIVAMENTE con un oggetto JSON che rispetta lo schema, SENZA introduzione.
+                    `
+                }]
+            };
+
+            const correctionSchema = {
+                type: "OBJECT",
+                properties: {
+                    score: { type: "NUMBER", description: "Il punteggio assegnato alla risposta (max ${testData.questions[0].points} - varia per domanda)." },
+                    justification: { type: "STRING", description: "Motivazione dettagliata del punteggio, includendo il rilevamento AI (se 0 punti per IA, deve essere specificato)." }
+                },
+                required: ["score", "justification"]
+            };
+
+            let questionIndex = 0;
+            for (const q of testData.questions) {
+                const studentAnswer = studentAnswers[q.id] || 'Nessuna risposta fornita';
+                
+                // Per risposte chiuse (V/F, Multipla), correggi in JS per velocità e precisione
+                let score = 0;
+                let justification = "";
+                let needsLLMCorrection = true;
+
+                if (q.type.includes('Multipla') || q.type.includes('Vero/Falso')) {
+                    needsLLMCorrection = false;
+                    const isCorrect = studentAnswer.trim() === q.correct_answer.trim();
+                    score = isCorrect ? q.points : 0;
+                    justification = isCorrect ? "Risposta esatta." : `Risposta errata. Risposta corretta era: ${q.correct_answer}.`;
+                }
+
+                if (needsLLMCorrection) {
+                    const correctionQuery = `
+                        Domanda: ${q.text}
+                        Risposta Corretta Attesa: ${q.correct_answer}
+                        Risposta dello Studente: ${studentAnswer}
+                        Punti Massimi: ${q.points}
+                        Corrigi e giustifica.
+                    `;
+                    
+                    const correctionPayload = {
+                        contents: [{ parts: [{ text: correctionQuery }] }],
+                        systemInstruction: correctionSystemInstruction,
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: correctionSchema
+                        },
+                    };
+
+                    // Aggiunge la promessa alla lista
+                    const promise = callGeminiApi(correctionPayload)
+                        .then(jsonResult => {
+                            try {
+                                const result = JSON.parse(jsonResult);
+                                score = Math.max(0, Math.min(q.points, result.score)); // Clamp score
+                                justification = result.justification;
+                            } catch (e) {
+                                console.error(`Errore nel parsing della correzione per ${q.id}:`, e);
+                                score = 0;
+                                justification = "Errore di correzione automatica. Punteggio: 0.";
+                            }
+                        })
+                        .catch(e => {
+                            console.error(`Errore API per la correzione di ${q.id}:`, e);
+                            score = 0;
+                            justification = "Errore di comunicazione con il correttore AI. Punteggio: 0.";
+                        });
+                    gradingPromises.push(promise.then(() => {
+                        // Aggiunge il risultato, ora che score e justification sono popolati
+                        correctedDetails.push({ ...q, student_answer: studentAnswer, assigned_score: score, justification: justification });
+                    }));
+
+                } else {
+                    // Aggiunge il risultato per le domande chiuse senza LLM
+                    correctedDetails.push({ ...q, student_answer: studentAnswer, assigned_score: score, justification: justification });
+                }
+            }
+
+            // Attende che tutte le correzioni LLM siano terminate
+            await Promise.all(gradingPromises);
+
+            // Calcola il punteggio totale dopo l'attesa
+            totalScore = correctedDetails.reduce((sum, d) => sum + d.assigned_score, 0);
+
+            // 4b. Calcola il voto finale in decimi (arrotondato a 1 decimale)
+            const finalGrade = Math.round((totalScore / totalMaxPoints) * 10 * 10) / 10;
+            
+            // 4c. Salva i risultati della correzione su Firestore
+            const testDocRef = doc(window.getTestsCollection(window.userId), testId);
+            await setDoc(testDocRef, {
+                studentAnswers: studentAnswers,
+                correctedDetails: correctedDetails,
+                totalScore: totalScore,
+                totalMaxPoints: totalMaxPoints,
+                grade: finalGrade,
+                isCorrected: true,
+                correctedAt: serverTimestamp(),
+            }, { merge: true });
+
+            submitButton.disabled = false;
+            buttonText.textContent = 'Correzione Completata!';
+            spinner.classList.add('hidden');
+
+            showMessage('Correzione Completata', `La verifica è stata corretta! Voto Finale: ${finalGrade}/10. Puoi scaricare il PDF dettagliato.`, 'green');
+
+            // Ricarica la vista per mostrare il PDF e il voto
+            window.showStudentView(testId);
+        }
+
+        /**
+         * 5. Genera il PDF Corretto e la Griglia di Valutazione.
+         */
+        window.generatePDF = async (testId, includeRubric = true, topicTitle) => {
+            if (!window.db || !window.userId) { showMessage('Errore', 'Sistema non inizializzato.', 'red'); return; }
+
+            const testDocRef = doc(window.getTestsCollection(window.userId), testId);
+            const testDoc = await getDoc(testDocRef);
+            if (!testDoc.exists()) { showMessage('Errore', 'Dati della verifica non trovati per il PDF.', 'red'); return; }
+            const testData = testDoc.data();
+
+            if (!testData.isCorrected) { showMessage('Attenzione', 'La verifica non è ancora stata corretta.', 'yellow'); return; }
+
+            const { jsPDF } = window.jspdf;
+            const docPdf = new jsPDF();
+            let y = 10;
+            const lineHeight = 7;
+            const margin = 15;
+
+            // Intestazione
+            docPdf.setFontSize(16);
+            docPdf.text("Verifica Corretta - Risultati Dettagliati", margin, y);
+            y += lineHeight;
+            docPdf.setFontSize(12);
+            docPdf.text(`Argomento: ${topicTitle || 'N/A'}`, margin, y);
+            y += lineHeight;
+            docPdf.text(`ID Verifica: ${testId}`, margin, y);
+            y += lineHeight * 2;
+
+            // Voto
+            docPdf.setFontSize(24);
+            docPdf.setTextColor(30, 80, 180); // Blu
+            docPdf.text(`Voto Finale: ${testData.grade}/10`, margin, y);
+            y += lineHeight * 2;
+            docPdf.setTextColor(0, 0, 0); // Nero
+
+            // Dettagli Domanda per Domanda
+            docPdf.setFontSize(14);
+            docPdf.text("Correzione Dettagliata delle Risposte", margin, y);
+            y += lineHeight;
+
+            docPdf.setFontSize(10);
+            
+            testData.correctedDetails.forEach((q, index) => {
+                // Check for new page
+                if (y > 280) { docPdf.addPage(); y = 10; }
+                
+                docPdf.setDrawColor(200, 200, 200);
+                docPdf.line(margin, y, 210 - margin, y);
+                y += 2;
+
+                // Domanda
+                docPdf.setFont(undefined, 'bold');
+                const qText = `D${index + 1} (${q.type}, ${q.points} pt): ${q.text}`;
+                const qLines = docPdf.splitTextToSize(qText, 180);
+                docPdf.text(qLines, margin, y);
+                y += qLines.length * lineHeight;
+
+                // Risposta Studente
+                docPdf.setFont(undefined, 'normal');
+                docPdf.setTextColor(90, 90, 90); // Grigio scuro
+                const studentAnswerText = `Risposta: ${q.student_answer}`;
+                const sLines = docPdf.splitTextToSize(studentAnswerText, 180);
+                docPdf.text(sLines, margin + 5, y);
+                y += sLines.length * lineHeight;
+
+                // Giustificazione/Punteggio
+                docPdf.setFont(undefined, 'italic');
+                docPdf.setTextColor(200, 50, 50); // Rosso per giustificazione
+                const justificationText = `Giustificazione (Punteggio Assegnato: ${q.assigned_score}/${q.points}): ${q.justification}`;
+                const jLines = docPdf.splitTextToSize(justificationText, 180);
+                docPdf.text(jLines, margin + 5, y);
+                y += jLines.length * lineHeight;
+                
+                y += 5; // Spazio
+                docPdf.setTextColor(0, 0, 0);
+            });
+
+            // Griglia di Valutazione (se richiesta)
+            if (includeRubric && testData.gradingRubric && testData.gradingRubric.length > 0) {
+                if (y > 250) { docPdf.addPage(); y = 10; }
+                
+                docPdf.setFontSize(16);
+                docPdf.setTextColor(30, 80, 180);
+                docPdf.text("Griglia di Valutazione Dettagliata", margin, y);
+                y += lineHeight * 1.5;
+                docPdf.setTextColor(0, 0, 0);
+
+                const tableData = testData.gradingRubric.map(item => [item.criteria, item.maxPoints.toString(), item.description]);
+
+                docPdf.autoTable({
+                    startY: y,
+                    head: [['Criterio', 'Punti Max', 'Descrizione/Indicatori']],
+                    body: tableData,
+                    theme: 'grid',
+                    styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+                    headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0] },
+                    margin: { left: margin, right: margin }
+                });
+            }
+
+            // Salvataggio del PDF
+            docPdf.save(`Verifica_Corretta_${testId}.pdf`);
+        };
+
+
+        /**
+         * 6. Routing (Gestione Hash URL per Docente/Studente).
+         */
+        window.onhashchange = function () {
+            const hash = window.location.hash.substring(1);
+            if (hash.startsWith('student-')) {
+                const testId = hash.substring('student-'.length);
+                document.getElementById('teacher-view').classList.add('hidden');
+                document.getElementById('student-view').classList.remove('hidden');
+                window.showStudentView(testId);
+            } else {
+                document.getElementById('teacher-view').classList.remove('hidden');
+                document.getElementById('student-view').classList.add('hidden');
+            }
+        };
+
+        // Esegui il routing all'avvio
+        window.onload = function() {
+            window.onhashchange();
+        };
+
+    </script>
+
+</body>
+</html>
