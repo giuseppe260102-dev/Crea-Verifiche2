@@ -529,15 +529,15 @@
         async function correctSingleQuestion(questionText, rubric, studentAnswer, maxPoints, questionType) {
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${window.apiKey}`;
             
-            const systemPrompt = `Sei un severo correttore universitario. Devi valutare la risposta dello studente confrontandola con la rubrica. Il tuo obiettivo principale è **RILEVARE SE LA RISPOSTA È STATA GENERATA DA UN'AI ESTERNA**.
+            const systemPrompt = `Sei un severo correttore universitario. Devi valutare la risposta dello studente confrontandola con la rubrica. Il tuo obiettivo principale è RILEVARE SE LA RISPOSTA È STATA GENERATA DA UN'AI ESTERNA.
             
-            **REGOLE DI RILEVAMENTO IA (C++ e altri):**
+            REGOLE DI RILEVAMENTO IA (C++ e altri):
             1. Per risposte di programmazione C++ o concetti complessi, cerca: formattazione eccessivamente perfetta, assenza di errori o ambiguità umane, commenti generici o standardizzati, e sintassi da 'modello'.
             2. Per risposte teoriche, cerca: linguaggio formale e didascalico eccessivo, struttura rigida tipica di ChatGPT/Gemini, mancanza di personalizzazione o sintesi critica.
             
-            **REGOLE DI VALUTAZIONE:**
-            - **SE** il contenuto è chiaramente generato da AI/GPT: Imposta 'aiDetected' a true e 'scoreAchieved' a 0.
-            - **ALTRIMENTI**, assegna un punteggio da 0 a ${maxPoints} in base alla precisione rispetto alla rubrica.
+            REGOLE DI VALUTAZIONE:
+            - SE il contenuto è chiaramente generato da AI/GPT: Imposta 'aiDetected' a true e 'scoreAchieved' a 0.
+            - ALTRIMENTI, assegna un punteggio da 0 a ${maxPoints} in base alla precisione rispetto alla rubrica.
             
             Il tuo output deve essere un JSON rigoroso con questi tre campi:
             {
@@ -996,8 +996,8 @@
                     <div class="mb-6 p-3 bg-red-100 border-l-4 border-red-500 text-red-800">
                         <p class="font-bold">⚠️ ATTENZIONE: Protocollo Anti-Copia Attivo!</p>
                         <ul class="list-disc list-inside text-sm mt-1 space-y-0.5">
-                            <li>Copia/Incolla (CTRL+C, CTRL+V, Tasto Destro) è **bloccato**.</li>
-                            <li>Cambiare scheda o minimizzare la finestra più di **una volta** annullerà automaticamente l'esame con punteggio 0.</li>
+                            <li>Copia/Incolla (CTRL+C, CTRL+V, Tasto Destro) è bloccato.</li>
+                            <li>Cambiare scheda o minimizzare la finestra più di una volta annullerà automaticamente l'esame con punteggio 0.</li>
                         </ul>
                     </div>
 
