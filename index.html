@@ -44,7 +44,15 @@
 
                 <div class="input-group">
                     <label for="topic" class="block text-sm font-medium text-gray-700 mb-1">Argomento Dettagliato (Testo descrittivo, max 1000 parole. Più dettagliato è il testo, migliore sarà la verifica.)</label>
-                    <textarea id="topic" rows="5" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm" placeholder="Es: 'La teoria della relatività ristretta di Einstein. Includi dettagli sulle trasformazioni di Lorentz, il concetto di dilatazione del tempo e la formula E=mc². Focalizzati su esercizi teorici e pratici di livello universitario.'"></textarea>
+                    <textarea id="topic" rows="10" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm" placeholder="Incolla qui il tuo testo lunghissimo e dettagliato per la verifica.">
+La teoria della relatività ristretta, formulata da Albert Einstein nel 1905, è uno dei pilastri della fisica moderna. Essa rivoluziona i concetti classici di spazio e tempo introducendo l'idea che le leggi della fisica sono le stesse in tutti i sistemi di riferimento inerziali e che la velocità della luce nel vuoto, indicata con 'c', è la stessa per tutti gli osservatori, indipendentemente dal moto della sorgente. Questo principio ha conseguenze profonde.
+
+I Principi Fondamentali sono due: (1) Le leggi della fisica sono le stesse in tutti i sistemi di riferimento inerziali (Principio di Relatività); (2) La velocità della luce nel vuoto è costante per tutti gli osservatori inerziali (Principio di Costanza della Velocità della Luce).
+
+Le Trasformazioni di Lorentz, che sostituiscono le trasformazioni di Galileo, descrivono come le coordinate spazio-temporali di un evento cambiano tra due sistemi di riferimento in moto relativo. In particolare, la dilatazione del tempo ($\Delta t = \gamma \Delta t_0$) e la contrazione delle lunghezze ($L = L_0 / \gamma$) sono effetti direttamente derivabili da queste trasformazioni, dove $\gamma$ è il fattore di Lorentz $\gamma = 1 / \sqrt{1 - (v/c)^2}$. Per esempio, un gemello astronauta che viaggia a velocità prossime a 'c' invecchierà meno del suo fratello rimasto sulla Terra.
+
+Infine, il concetto di massa ed energia si uniscono nella celebre equazione $E=mc^2$. Questa formula stabilisce che la massa ($m$) è una forma di energia ($E$) e viceversa, e che una piccola quantità di massa può essere convertita in un'enorme quantità di energia a causa del fattore $c^2$. Questo principio è fondamentale per comprendere i processi nucleari e la conservazione dell'energia-momento. Il livello richiesto per la verifica è universitario, con enfasi su esercizi che richiedono l'applicazione dei fattori gamma ($\gamma$) e la comprensione della quadridimensione spazio-tempo. 
+</textarea>
                     <p class="text-xs text-gray-500 mt-1">Puoi anche incollare il link a un'immagine nell'argomento per creare esercizi complessi basati sull'immagine.</p>
                 </div>
 
@@ -111,8 +119,21 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // Importa tutte le funzioni Firestore che verranno utilizzate nell'altro blocco script
         import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ESPONE LE FUNZIONI AL CONTESTO GLOBALE (window) PER L'UTILIZZO NELLO SCRIPT PRINCIPALE (FIX!):
+        // Le funzioni importate da un modulo non sono accessibili direttamente al di fuori del modulo
+        // (es. in handleGenerateTests). Le assegniamo a window per renderle globali.
+        window.doc = doc;
+        window.getDoc = getDoc;
+        window.setDoc = setDoc;
+        window.onSnapshot = onSnapshot;
+        window.collection = collection;
+        window.query = query;
+        window.addDoc = addDoc; 
+        window.serverTimestamp = serverTimestamp;
 
         // Inizializzazione Globale di Firebase (MANDATORY)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -131,7 +152,7 @@
                     window.userId = user.uid;
                     authStatusEl.innerHTML = `Accesso Docente (ID: <span class="font-mono text-indigo-600">${window.userId}</span>). <span class="text-red-500">Condividi questo ID per collaborare, ma non la tua verifica.</span>`;
                     // Carica le verifiche dopo l'autenticazione
-                    loadTests();
+                    window.loadTests();
                 } else {
                     window.userId = 'unknown'; // Sarà sovrascritto dalla signIn
                     authStatusEl.textContent = 'Autenticazione in corso...';
@@ -160,8 +181,8 @@
         window.loadTests = () => {
             if (!window.userId || window.userId === 'unknown' || !window.db) return;
 
-            const q = query(window.getTestsCollection(window.userId));
-            onSnapshot(q, (snapshot) => {
+            const q = window.query(window.getTestsCollection(window.userId));
+            window.onSnapshot(q, (snapshot) => {
                 const testsListEl = document.getElementById('tests-list');
                 const noTestsMessage = document.getElementById('no-tests-message');
                 const testCountEl = document.getElementById('test-count');
@@ -337,7 +358,7 @@
                     - ${DIFFICULTY_SPLIT.difficult} domande Difficili
                     - ${DIFFICULTY_SPLIT.veryDifficult} domande Difficilissime.
                     
-                    Le tipologie di domande devono essere miste: A completamento, Vero/Falso, a Risposta Multipla (con e senza immagini), Esercizi Pratici, e Domande Teoriche (es. 'Fornisci un esempio di...'). Assicurati che le domande siano di alto livello e stimolino il pensiero critico.
+                    Le tipologie di domande devono essere miste: A completamento, Vero/Falso, a Risposta Multipla (con e senza immagini), Esercizi Pratici, e Domande Teoriche (es. 'Fornisci un esempio di...'). Assicurati che le domande siano di alto livello, stimolino il pensiero critico e siano in linea con l'argomento fornito.
                     
                     Devi rispondere ESCLUSIVAMENTE con un oggetto JSON che rispetti lo schema fornito, senza alcuna introduzione o spiegazione aggiuntiva.
                     Il punteggio totale è 100 punti. Ogni domanda avrà un peso proporzionale alla sua difficoltà.`
@@ -398,10 +419,20 @@
                 try {
                     showMessage('Generazione in corso', `Sto creando la Verifica ${i + 1} di ${numTests}...`, 'yellow');
                     const jsonResponse = await callGeminiApi(payload);
-                    const testData = JSON.parse(jsonResponse);
                     
-                    // Salva su Firestore
-                    const docRef = await addDoc(window.getTestsCollection(window.userId), {
+                    let testData;
+                    try {
+                        // Tenta di parsare il JSON
+                        testData = JSON.parse(jsonResponse);
+                    } catch (e) {
+                        // ERRORE CRITICO DI PARSING: Stampa la risposta cruda per il debugging
+                        console.error("ERRORE CRITICO DI PARSING JSON. Risposta API Cruda:", jsonResponse);
+                        throw new Error("Risposta JSON non valida dall'AI. Controlla la console per la risposta esatta.");
+                    }
+
+
+                    // Salva su Firestore (addDoc ora è definito grazie all'export su window)
+                    const docRef = await window.addDoc(window.getTestsCollection(window.userId), {
                         ...testData,
                         topicDetails: topic,
                         classLevel: classLevel,
@@ -409,7 +440,8 @@
                         isCorrected: false,
                         studentAnswers: null,
                         grade: null,
-                        createdAt: serverTimestamp(),
+                        // serverTimestamp ora è disponibile su window
+                        createdAt: window.serverTimestamp(), 
                     });
                     
                     generatedTests.push(docRef.id);
@@ -417,7 +449,7 @@
 
                 } catch (error) {
                     console.error("Errore durante la generazione/salvataggio del test:", error);
-                    showMessage('Errore Critico', `Impossibile generare la verifica #${i + 1}. Controlla la console per i dettagli.`, 'red');
+                    showMessage('Errore Critico', `Impossibile generare la verifica #${i + 1}. Controlla la console per i dettagli. L'errore potrebbe essere dovuto a un timeout API o a un JSON non valido.`, 'red');
                     break;
                 }
             }
@@ -454,8 +486,8 @@
                 </div>
             `;
 
-            const testDocRef = doc(window.getTestsCollection(window.userId), testId);
-            const testDoc = await getDoc(testDocRef);
+            const testDocRef = window.doc(window.getTestsCollection(window.userId), testId);
+            const testDoc = await window.getDoc(testDocRef);
 
             if (!testDoc.exists()) {
                 studentViewEl.innerHTML = `<p class="text-red-600 font-bold mt-10">Errore: Verifica non trovata.</p>`;
@@ -556,8 +588,8 @@
             const answers = {};
 
             // Raccogli le risposte
-            const testDocRef = doc(window.getTestsCollection(window.userId), testId);
-            const testDoc = await getDoc(testDocRef);
+            const testDocRef = window.doc(window.getTestsCollection(window.userId), testId);
+            const testDoc = await window.getDoc(testDocRef);
             const testData = testDoc.data();
 
             testData.questions.forEach(q => {
@@ -682,15 +714,15 @@
             const finalGrade = Math.round((totalScore / totalMaxPoints) * 10 * 10) / 10;
             
             // 4c. Salva i risultati della correzione su Firestore
-            const testDocRef = doc(window.getTestsCollection(window.userId), testId);
-            await setDoc(testDocRef, {
+            const testDocRef = window.doc(window.getTestsCollection(window.userId), testId);
+            await window.setDoc(testDocRef, {
                 studentAnswers: studentAnswers,
                 correctedDetails: correctedDetails,
                 totalScore: totalScore,
                 totalMaxPoints: totalMaxPoints,
                 grade: finalGrade,
                 isCorrected: true,
-                correctedAt: serverTimestamp(),
+                correctedAt: window.serverTimestamp(),
             }, { merge: true });
 
             submitButton.disabled = false;
@@ -709,8 +741,8 @@
         window.generatePDF = async (testId, includeRubric = true, topicTitle) => {
             if (!window.db || !window.userId) { showMessage('Errore', 'Sistema non inizializzato.', 'red'); return; }
 
-            const testDocRef = doc(window.getTestsCollection(window.userId), testId);
-            const testDoc = await getDoc(testDocRef);
+            const testDocRef = window.doc(window.getTestsCollection(window.userId), testId);
+            const testDoc = await window.getDoc(testDocRef);
             if (!testDoc.exists()) { showMessage('Errore', 'Dati della verifica non trovati per il PDF.', 'red'); return; }
             const testData = testDoc.data();
 
