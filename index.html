@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generatore Verifiche Universitarie Avanzato</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Importazione Firebase: App, Auth, Firestore -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, where, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Variabili Globali (Configurazione Fornita dall'Utente)
+        // ATTENZIONE: La chiave Gemini API deve essere inserita qui per le chiamate AI (genera domande e immagini)
+        // Se si verifica un errore CORS o di rete per le immagini, la causa probabile è una chiave non valida.
+        const firebaseConfig = {
+            apiKey: "AIzaSyBJzjPpfxgGbt8atUviVXonByfszGhpyxA", // Placeholder
+            authDomain: "verifiche-595e5-8a7a0.firebaseapp.com", // Placeholder
+            projectId: "verifiche-595e5-8a7a0", // Placeholder
+            storageBucket: "verifiche-595e5-8a7a0.firebasestorage.app", // Placeholder
+            messagingSenderId: "859645064209", // Placeholder
+            appId: "1:859645064209:web:5e310b8553b1a4095b6db0", // Placeholder
+            measurementId: "G-KEPTZLCX" // Placeholder
+        };
+        // *** CHIAVE GEMINI API CRITICA ***
+        const apiKey = "AIzaSyAzYH13cNVA74Hbp1I2cagCncCusyk_tn4"; // LASCIARE VUOTO SE SI USA L'AMBIENTE CANVAS, ALTRIMENTI INSERIRE QUI LA CHIAVE VALIDA.
+
+        // Inizializzazione Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        // ID dell'applicazione (usato per la struttura del database)
+        const appId = 'uni-exam-generator-v2'; // ID fisso per ambienti non-Canvas
+
+        // Esposizione globale delle variabili necessarie
+        window.db = db;
+        window.auth = auth;
+        window.apiKey = apiKey;
+        window.appId = appId;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.signInAnonymously = signInAnonymously;
+        window.getDoc = getDoc;
+        window.doc = doc;
+        window.setDoc = setDoc;
+        window.updateDoc = updateDoc;
+        window.onSnapshot = onSnapshot;
+        window.collection = collection;
+        window.query = query;
+        window.where = where;
+        window.addDoc = addDoc;
+    </script>
+
+    <!-- Tailwind Config per il colore primario -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#4F46E5',
+                        'secondary': '#10B981',
+                        'danger': '#EF4444',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        /* Stili per la modalità di stampa (PDF) */
+        @media print {
+            body { 
+                margin: 0; 
+                padding: 0; 
+                -webkit-print-color-adjust: exact; 
+                color-adjust: exact;
+                background: white !important;
+            }
+            #printable-content {
+                width: 100%;
+                margin: 0;
+                box-shadow: none;
+                padding: 20px;
+                border: none;
+            }
+            .no-print { display: none !important; }
+            .question-box { page-break-inside: avoid; }
+            h1, h2, h3, h4, p, li { color: black !important; }
+        }
+
+        /* Stili per le icone Lucide */
+        .lucide { display: inline-block; }
+
+        /* Blocco Copia/Incolla (Cruciale per l'Anti-Copia) */
+        .exam-area, #exam-form {
+            -webkit-user-select: none;  /* Safari */
+            -moz-user-select: none;     /* Firefox */
+            -ms-user-select: none;      /* IE10+ */
+            user-select: none;          /* Standard */
+        }
+        .exam-area textarea {
+            -webkit-user-select: text;  /* Riabilita l'input di testo */
+            -moz-user-select: text;
+            -ms-user-select: text;
+            user-select: text;
+        }
+
+        /* Pulsanti con gradiente */
+        .btn-primary {
+            background-image: linear-gradient(to right, #4F46E5, #6366F1);
+            transition: all 0.2s;
+        }
+        .btn-primary:hover {
+            background-image: linear-gradient(to right, #4338CA, #4F46E5);
+            transform: scale(1.01);
+            box-shadow: 0 4px 15px rgba(79, 70, 229, 0.4);
+        }
+        .btn-danger {
+            background-color: #EF4444;
+            transition: all 0.2s;
+        }
+        .btn-danger:hover {
+            background-color: #DC2626;
+            transform: scale(1.01);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="mb-8">
+            <h1 class="text-4xl font-extrabold text-primary flex items-center">
+                <svg class="lucide w-8 h-8 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                Generatore Verifiche IA
+            </h1>
+            <p id="auth-status" class="text-sm text-gray-500 mt-1"></p>
+        </header>
+
+        <!-- Contenuto dinamico (Dashboard Docente o Verifica Studente) -->
+        <div id="content" class="min-h-[60vh]">
+            <div class="text-center py-20 text-gray-500">
+                <svg class="lucide w-8 h-8 mx-auto animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                <p class="mt-2">Caricamento applicazione...</p>
+            </div>
+        </div>
+
+        <!-- Modale per messaggi (simula alert()) -->
+        <div id="modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center z-50">
+            <div class="bg-white p-6 rounded-lg shadow-2xl max-w-sm w-full">
+                <h3 id="modal-title" class="text-xl font-bold mb-3 text-primary"></h3>
+                <p id="modal-message" class="text-gray-700 mb-4"></p>
+                <button onclick="closeModal()" class="w-full btn-primary text-white py-2 rounded-lg font-semibold">Chiudi</button>
+            </div>
+        </div>
+
+        <!-- Banner Violazione -->
+        <div id="violation-banner" class="fixed bottom-0 right-0 m-4 p-4 bg-red-600 text-white rounded-lg shadow-xl hidden z-40">
+            <p class="font-bold">⚠️ ATTENZIONE: Tentativo di Fuga</p>
+            <p id="violation-message" class="text-sm"></p>
+        </div>
+
+    </div>
+
+    <!-- Script delle Icone Lucide -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script>
+        // Inizializza le icone Lucide
+        window.onload = function() {
+            lucide.createIcons();
+        };
+    </script>
+    
+    <script type="module">
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, where, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- VARIABILI GLOBALI E UTILITY ---
+        let currentUserId = null;
+        const EXAM_COLLECTION_PATH = `artifacts/${window.appId}/public/data/exams`;
+        const CONVERSION_RATE = 100 / 120; // 120 punti max = 10/10
+
+        // Modale UI (rimpiazza alert())
+        window.showModal = (title, message) => {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-message').textContent = message;
+            document.getElementById('modal').classList.remove('hidden', 'opacity-0');
+            document.getElementById('modal').classList.add('flex', 'opacity-100');
+        };
+
+        window.closeModal = () => {
+            document.getElementById('modal').classList.add('hidden', 'opacity-0');
+            document.getElementById('modal').classList.remove('flex', 'opacity-100');
+        };
+
+        // Gestione Anti-Fuga (Safety Protocol)
+        let violationCount = 0;
+        const MAX_VIOLATIONS = 1; // Solo 1 avviso, il secondo tentativo invalida l'esame
+        let examInvalidated = false;
+
+        function showViolationBanner(message) {
+            const banner = document.getElementById('violation-banner');
+            document.getElementById('violation-message').textContent = message;
+            banner.classList.remove('hidden');
+            setTimeout(() => banner.classList.add('hidden'), 5000);
+        }
+
+        function handleExamSecurity() {
+            if (document.getElementById('exam-form') === null || examInvalidated) {
+                return; // Non in modalità esame o già invalidato
+            }
+
+            violationCount++;
+            
+            if (violationCount > MAX_VIOLATIONS) {
+                showModal("Esame Annullato", "ATTENZIONE! L'esame è stato automaticamente annullato e segnato come violazione per tentata interruzione o fuga. Il punteggio assegnato è 0.");
+                examInvalidated = true;
+                
+                // Forza l'auto-consegna con punteggio zero
+                const examId = new URLSearchParams(window.location.search).get('examId');
+                if (examId) {
+                    forceInvalidateExam(examId);
+                }
+                
+                // Disabilita il form
+                document.getElementById('exam-form').querySelectorAll('textarea, button').forEach(el => el.disabled = true);
+
+            } else {
+                showViolationBanner(`Tentativo di fuga #${violationCount}. Al prossimo tentativo l'esame sarà invalidato automaticamente.`);
+            }
+        }
+
+        function forceInvalidateExam(examId) {
+            const docRef = doc(window.db, EXAM_COLLECTION_PATH, examId);
+            updateDoc(docRef, {
+                status: 'Corrected',
+                scoreAchieved: 0,
+                finalGrade: '0.0',
+                isAIChecked: true,
+                aiDetection: "VIOLAZIONE: Esame annullato per tentata interruzione o fuga dal browser.",
+                correctedAt: new Date().toISOString()
+            }).catch(e => console.error("Errore forzatura annullamento:", e));
+        }
+
+
+        // Event Listener Anti-Fuga (Attivato solo nella vista Studente)
+        let hasMountedSecurity = false;
+        function mountSecurityListeners() {
+            if (hasMountedSecurity) return;
+            
+            // Blocco Menu Contestuale (Tasto Destro)
+            document.addEventListener('contextmenu', (e) => {
+                if (document.getElementById('exam-form')) {
+                    e.preventDefault();
+                    showViolationBanner("Funzione bloccata durante l'esame.");
+                    violationCount++;
+                    if (violationCount > MAX_VIOLATIONS) handleExamSecurity();
+                }
+            });
+
+            // Blocco Copia/Incolla/Taglia
+            const blockClipboard = (e) => {
+                 if (document.getElementById('exam-form')) {
+                    e.preventDefault();
+                    showViolationBanner("Copia/Incolla/Taglia non consentiti.");
+                    violationCount++;
+                    if (violationCount > MAX_VIOLATIONS) handleExamSecurity();
+                 }
+            };
+            document.addEventListener('copy', blockClipboard);
+            document.addEventListener('paste', blockClipboard);
+            document.addEventListener('cut', blockClipboard);
+
+            // Blocco cambio scheda/finestra (Rafforzato)
+            const checkVisibility = () => {
+                const examForm = document.getElementById('exam-form');
+                if (examForm && !examInvalidated) {
+                    // Controllo primario: La finestra non è visibile
+                    if (document.visibilityState !== 'visible') {
+                        handleExamSecurity();
+                    }
+                }
+            };
+
+            // 1. Listener per il cambio di visibilità della scheda (più affidabile)
+            document.addEventListener('visibilitychange', checkVisibility);
+            
+            // 2. Listener per il 'blur' della finestra (cambio applicazione o finestra)
+            window.addEventListener('blur', checkVisibility);
+
+            hasMountedSecurity = true;
+        }
+
+
+        // --- LOGICA DI RE-ATTEMPT (EXPONENTIAL BACKOFF) ---
+        const MAX_RETRIES = 5;
+        async function fetchWithRetry(url, options, retryCount = 0) {
+            try {
+                const response = await fetch(url, options);
+                if (response.status === 403) {
+                     showModal("Errore API", "Accesso API negato (403). La chiave Gemini fornita non è valida o non autorizzata. Verifica la console per i dettagli.");
+                     throw new Error('API Key Forbidden (403)');
+                }
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                if (retryCount >= MAX_RETRIES) {
+                    throw new Error(`Tentativi API falliti dopo ${MAX_RETRIES} tentativi: ${error.message}`);
+                }
+                const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return fetchWithRetry(url, options, retryCount + 1);
+            }
+        }
+
+        // --- FUNZIONI DI GENERAZIONE AI ---
+
+        // 1. Genera Domande e Rubrica (Modalità Docente)
+        async function generateQuestionsAndRubric(topic) {
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${window.apiKey}`;
+            
+            const systemPrompt = `Sei un professore universitario esperto in Diritto, Informatica, Matematica e Scienze. Devi generare 20 domande complessità elevata (quasi universitarie) su un argomento fornito. Le domande devono essere diversificate:
+            - 5 Difficilissime (richiedono analisi critica, sintesi, o programmazione C++ avanzata/algoritmi complessi).
+            - 5 Difficili (richiedono applicazione pratica, schemi o esempi complessi).
+            - 10 Intermedie (richiedono conoscenza approfondita ma diretta).
+            
+            Per le domande di programmazione C++ o schemi (se l'argomento lo richiede), imposta 'type' su 'Image-Based' e fornisci un 'imagePrompt' descrittivo (es. 'Diagramma UML di un sistema di gestione magazzino').
+
+            DEVI USARE QUESTO SCHEMA JSON. IL CAMPO 'correctAnswer' (Rubrica) DEVE ESSERE ESTREMAMENTE DETTAGLIATO e indicare il punteggio base.
+
+            Il punteggio totale per tutte le domande deve essere 120 punti.
+
+            L'output deve essere un array JSON (responseSchema) come segue:
+            [
+                {
+                    "questionText": "...",
+                    "type": "Open-Ended" | "True-False" | "Image-Based",
+                    "points": 6 | 8 | 12,
+                    "difficulty": "Intermedia" | "Difficile" | "Difficilissima",
+                    "correctAnswer": "Rubrica dettagliata per la valutazione con punti chiave.",
+                    "imagePrompt": "Descrizione visiva per la generazione immagine (solo se type è 'Image-Based')",
+                    "placeholders": ["N1", "N2"] // Usare solo per la personalizzazione
+                }
+                // ... altre 19 domande
+            ]`;
+
+            const userQuery = `Genera un esame universitario di 20 domande sull'argomento: ${topic}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                questionText: { type: "STRING" },
+                                type: { type: "STRING" },
+                                points: { type: "NUMBER" },
+                                difficulty: { type: "STRING" },
+                                correctAnswer: { type: "STRING" },
+                                imagePrompt: { type: "STRING" },
+                                placeholders: { type: "ARRAY", items: { type: "STRING" } }
+                            },
+                            required: ["questionText", "type", "points", "difficulty", "correctAnswer"]
+                        }
+                    }
+                }
+            };
+
+            const options = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            };
+
+            const response = await fetchWithRetry(apiUrl, options);
+            const jsonText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+            
+            if (jsonText) {
+                try {
+                    return JSON.parse(jsonText);
+                } catch (e) {
+                    console.error("Errore nel parsing JSON:", e);
+                    showModal("Errore di Parsing", "L'AI non ha restituito un JSON valido. Riprova o semplifica l'argomento.");
+                    return null;
+                }
+            }
+            return null;
+        }
+
+        // 2. Genera Immagine AI (Modalità Studente) - USA imagen-3.0-generate-002
+        window.generateImage = async (imagePrompt, containerId) => {
+            const container = document.getElementById(containerId);
+            container.innerHTML = `<p class="text-primary mt-2 flex items-center">
+                <svg class="lucide w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                Generazione immagine AI in corso...
+            </p>`;
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${window.apiKey}`;
+            const payload = { 
+                instances: { 
+                    prompt: imagePrompt,
+                    config: {
+                        negative_prompt: "low quality, text, blurry, distorted, signature, artifacts"
+                    }
+                }, 
+                parameters: { "sampleCount": 1 } 
+            };
+
+            const options = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            };
+
+            try {
+                const result = await fetchWithRetry(apiUrl, options);
+                
+                const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
+                
+                if (base64Data) {
+                    const imageUrl = `data:image/png;base64,${base64Data}`;
+                    container.innerHTML = `<img src="${imageUrl}" alt="Schema generato dall'AI: ${imagePrompt}" class="mt-4 max-w-full h-auto rounded-lg shadow-md border-2 border-gray-200">`;
+                } else {
+                    container.innerHTML = `<p class="text-danger mt-2">
+                        <svg class="lucide w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.3 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        Generazione fallita: API non ha restituito dati validi. Controlla il payload.
+                    </p>`;
+                    console.error("Risposta immagine incompleta:", result);
+                }
+            } catch (error) {
+                container.innerHTML = `<p class="text-danger mt-2">
+                    <svg class="lucide w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.3 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    ERRORE CRITICO: ${error.message}. Causa probabile: Chiave Gemini API non valida o blocco CORS/di rete.
+                </p>`;
+                console.error("Errore generazione immagine:", error);
+            }
+        };
+
+
+        // 3. Correzione Automatica (Modalità Studente)
+        window.submitAndCorrectExam = async (examId, examData, studentResponses, studentInfo) => {
+            if (examInvalidated) {
+                 showModal("Esame Già Annullato", "La verifica è già stata annullata e non può essere inviata.");
+                 return;
+            }
+
+            const docRef = doc(window.db, EXAM_COLLECTION_PATH, examId);
+            
+            // Aggiorna nome e stato in tempo reale per il docente
+            await updateDoc(docRef, {
+                studentName: studentInfo.name,
+                studentSurname: studentInfo.surname,
+                status: 'Processing',
+                studentResponses: studentResponses,
+                submittedAt: new Date().toISOString()
+            });
+
+            // Avvio della correzione
+            const correctionResults = [];
+            let totalScore = 0;
+            let aiDetectedCount = 0;
+            const correctionElement = document.getElementById('correction-progress');
+            correctionElement.classList.remove('hidden');
+
+            for (let i = 0; i < examData.length; i++) {
+                const question = examData[i];
+                const studentAnswer = studentResponses[i];
+
+                correctionElement.innerHTML = `Correzione automatica in corso... Analisi Domanda ${i + 1} di 20.`;
+
+                const score = await correctSingleQuestion(
+                    question.questionText, 
+                    question.correctAnswer, 
+                    studentAnswer, 
+                    question.points,
+                    question.type
+                );
+                
+                correctionResults.push({
+                    qIndex: i,
+                    questionText: question.questionText,
+                    studentAnswer: studentAnswer,
+                    rubric: question.correctAnswer,
+                    maxPoints: question.points,
+                    scoreAchieved: score.score,
+                    aiDetection: score.aiDetected,
+                    feedback: score.feedback
+                });
+
+                if (score.aiDetected) {
+                    aiDetectedCount++;
+                }
+
+                totalScore += score.score;
+            }
+
+            // Calcolo del voto finale (Voto su 10)
+            const finalGrade = Math.min(10, totalScore * CONVERSION_RATE / 10).toFixed(1);
+            const aiDetectionFlag = aiDetectedCount > 0 ? "SEGNALATO: Possibile generazione AI rilevata in una o più risposte. Necessaria verifica del docente." : "Nessuna anomalia rilevata.";
+            
+            const finalStatus = aiDetectedCount > 0 ? 'Signaled' : 'Corrected';
+
+            // Aggiornamento finale del documento
+            await updateDoc(docRef, {
+                status: finalStatus,
+                scoreAchieved: totalScore,
+                finalGrade: finalGrade,
+                aiDetection: aiDetectionFlag,
+                correctionResults: correctionResults,
+                correctedAt: new Date().toISOString()
+            });
+
+            correctionElement.innerHTML = `Verifica completata! Voto Finale: ${finalGrade}/10.`;
+            
+            // Visualizza il risultato finale
+            renderFinalResult(examId, finalGrade, aiDetectionFlag);
+        };
+
+        // Funzione per correggere una singola domanda usando Gemini
+        async function correctSingleQuestion(questionText, rubric, studentAnswer, maxPoints, questionType) {
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${window.apiKey}`;
+            
+            const systemPrompt = `Sei un severo correttore universitario. Devi valutare la risposta dello studente confrontandola con la rubrica. Il tuo obiettivo principale è **RILEVARE SE LA RISPOSTA È STATA GENERATA DA UN'AI ESTERNA**.
+            
+            **REGOLE DI RILEVAMENTO IA (C++ e altri):**
+            1. Per risposte di programmazione C++ o concetti complessi, cerca: formattazione eccessivamente perfetta, assenza di errori o ambiguità umane, commenti generici o standardizzati, e sintassi da 'modello'.
+            2. Per risposte teoriche, cerca: linguaggio formale e didascalico eccessivo, struttura rigida tipica di ChatGPT/Gemini, mancanza di personalizzazione o sintesi critica.
+            
+            **REGOLE DI VALUTAZIONE:**
+            - **SE** il contenuto è chiaramente generato da AI/GPT: Imposta 'aiDetected' a true e 'scoreAchieved' a 0.
+            - **ALTRIMENTI**, assegna un punteggio da 0 a ${maxPoints} in base alla precisione rispetto alla rubrica.
+            
+            Il tuo output deve essere un JSON rigoroso con questi tre campi:
+            {
+                "scoreAchieved": 0 | 1 | ... | ${maxPoints},
+                "aiDetected": true | false,
+                "feedback": "Feedback specifico sul punteggio e sulla conformità alla rubrica o motivazione del rilevamento AI."
+            }`;
+
+            const userQuery = `Domanda: "${questionText}" (Tipo: ${questionType}). Max Punti: ${maxPoints}.
+            Rubrica Attesa: "${rubric}"
+            Risposta dello Studente: "${studentAnswer}"`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            scoreAchieved: { type: "NUMBER" },
+                            aiDetected: { type: "BOOLEAN" },
+                            feedback: { type: "STRING" }
+                        },
+                        required: ["scoreAchieved", "aiDetected", "feedback"]
+                    }
+                }
+            };
+
+            const options = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            };
+
+            try {
+                const response = await fetchWithRetry(apiUrl, options);
+                const jsonText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (jsonText) {
+                    const result = JSON.parse(jsonText);
+                    
+                    // Forza il punteggio a 0 se l'AI lo rileva
+                    if (result.aiDetected) {
+                        result.scoreAchieved = 0;
+                    }
+
+                    return {
+                        score: Math.min(result.scoreAchieved, maxPoints),
+                        aiDetected: result.aiDetected,
+                        feedback: result.feedback
+                    };
+                }
+            } catch (e) {
+                console.error("Errore nella correzione singola:", e);
+                return { score: 0, aiDetected: true, feedback: "Errore di correzione AI. Segnalazione automatica." };
+            }
+        }
+
+
+        // --- LOGICA DI RENDERING ---
+
+        // Inizializzazione e Routing Principale
+        window.initAuthAndRender = async () => {
+            const contentDiv = document.getElementById('content');
+            
+            onAuthStateChanged(window.auth, async (user) => {
+                if (user) {
+                    currentUserId = user.uid;
+                    document.getElementById('auth-status').textContent = `Autenticato come utente anonimo (ID: ${currentUserId})`;
+                } else {
+                    // Autenticazione anonima se non già autenticato
+                    const userCredential = await signInAnonymously(window.auth);
+                    currentUserId = userCredential.user.uid;
+                    document.getElementById('auth-status').textContent = `Autenticato come utente anonimo (ID: ${currentUserId})`;
+                }
+
+                // Routing: Docente o Studente
+                const params = new URLSearchParams(window.location.search);
+                const examId = params.get('examId');
+
+                if (examId) {
+                    // Modalità Studente (Esame)
+                    loadStudentExam(examId);
+                } else {
+                    // Modalità Docente (Dashboard)
+                    renderTeacherDashboard();
+                }
+            });
+        };
+
+        // 1. Vista Docente (Dashboard & Generazione)
+        function renderTeacherDashboard() {
+            const contentDiv = document.getElementById('content');
+            contentDiv.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <!-- Colonna Generazione -->
+                    <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg h-full">
+                        <h2 class="text-2xl font-bold text-primary mb-4 flex items-center">
+                             <svg class="lucide w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.247m0-13C13.168 5.477 14.754 5 16.5 5s3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18s-3.332.477-4.5 1.247"></path></svg>
+                             Genera Nuove Verifiche
+                        </h2>
+                        <form id="generation-form" class="space-y-4">
+                            <div>
+                                <label for="topic" class="block text-sm font-medium text-gray-700">Argomento Dettagliato (per AI)</label>
+                                <textarea id="topic" rows="4" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary p-2 border"></textarea>
+                                <p class="text-xs text-gray-500 mt-1">L'AI genererà 20 domande (5 Difficilissime, 5 Difficili, 10 Intermedie) basate su questo testo.</p>
+                            </div>
+
+                            <h3 class="text-lg font-semibold mt-6 text-gray-800">Numero di Studenti per Classe/Sezione</h3>
+                            <div id="class-inputs" class="space-y-3">
+                                <!-- Le classi saranno generate qui sotto -->
+                            </div>
+                            
+                            <button type="submit" class="w-full btn-primary text-white py-3 rounded-lg font-semibold mt-4">
+                                <svg class="lucide w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.24a1 1 0 010 1.414l-8.586 8.586a1 1 0 01-1.414 0l-4.586-4.586a1 1 0 011.414-1.414L10 11.586l7.293-7.293a1 1 0 011.414 0z"></path></svg>
+                                Genera Verifiche Dettagliate
+                            </button>
+                            <div id="generation-status" class="mt-3 text-center text-sm text-primary font-medium hidden"></div>
+                        </form>
+                    </div>
+
+                    <!-- Colonna Dashboard Risultati -->
+                    <div class="lg:col-span-2 space-y-8">
+                        
+                        <div class="bg-white p-6 rounded-xl shadow-lg">
+                            <h2 class="text-2xl font-bold text-gray-800 mb-4 flex items-center">
+                                <svg class="lucide w-6 h-6 mr-2 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                Verifiche Generate (Link)
+                            </h2>
+                            <div id="pending-exams-container">
+                                <!-- Contenuto dinamico delle verifiche generate -->
+                                <p class="text-gray-500">Nessuna verifica generata. Usa il modulo a lato per iniziare.</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-6 rounded-xl shadow-lg">
+                            <h2 class="text-2xl font-bold text-gray-800 mb-4 flex items-center">
+                                <svg class="lucide w-6 h-6 mr-2 text-danger" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                Risultati Corretti / Segnalati
+                            </h2>
+                            <div id="completed-exams-container">
+                                <!-- Contenuto dinamico delle verifiche corrette -->
+                                <p class="text-gray-500">Nessun risultato disponibile.</p>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            `;
+            
+            // Definisce le classi e le sezioni come richiesto
+            const classesConfig = [
+                { year: 'Seconda', sections: [{ section: 'I', spec: 'Scientifico' }, { section: 'L', spec: 'Scientifico' }, { section: 'A', spec: 'Moda' }, { section: 'B', spec: 'Moda' }] },
+                { year: 'Terza', sections: [{ section: 'I', spec: 'Scientifico' }, { section: 'L', spec: 'Scientifico' }, { section: 'A', spec: 'Moda' }, { section: 'B', spec: 'Moda' }] },
+                { year: 'Quinta', sections: [{ section: 'I', spec: 'Scientifico' }, { section: 'L', spec: 'Scientifico' }, { section: 'A', spec: 'Moda' }, { section: 'B', spec: 'Moda' }] },
+                { year: 'Prima', sections: [{ section: 'A', spec: 'Moda' }, { section: 'B', spec: 'Moda' }] },
+            ];
+
+            const classInputsDiv = document.getElementById('class-inputs');
+            classInputsDiv.innerHTML = classesConfig.map(yearConfig => 
+                yearConfig.sections.map(sectionConfig => `
+                    <div class="flex justify-between items-center bg-gray-50 p-3 rounded-md border">
+                        <label for="${yearConfig.year}${sectionConfig.section}" class="text-sm font-medium text-gray-800">
+                            ${yearConfig.year} ${sectionConfig.section} (<span class="text-primary">${sectionConfig.spec}</span>)
+                        </label>
+                        <input type="number" id="${yearConfig.year}${sectionConfig.section}" 
+                               data-year="${yearConfig.year}" 
+                               data-section="${sectionConfig.section}" 
+                               data-spec="${sectionConfig.spec}"
+                               value="0" min="0" required 
+                               class="w-20 text-center rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary p-1 border">
+                    </div>
+                `).join('')
+            ).join('');
+
+            document.getElementById('generation-form').onsubmit = handleGenerateExams;
+
+            // Avvia il listener di Firestore per i dati in tempo reale
+            listenForExams();
+        }
+
+        // Funzione per sostituire i placeholder con valori randomici
+        function personalizeQuestion(question, index) {
+            let personalizedQuestion = { ...question };
+            if (question.placeholders && question.placeholders.length > 0) {
+                let text = question.questionText;
+                let rubric = question.correctAnswer;
+                
+                question.placeholders.forEach(ph => {
+                    const randomValue = Math.floor(Math.random() * 900) + 100; // Valore tra 100 e 1000
+                    const placeholderTag = new RegExp(ph, 'g');
+                    
+                    text = text.replace(placeholderTag, randomValue);
+                    rubric = rubric.replace(placeholderTag, randomValue);
+                });
+                
+                personalizedQuestion.questionText = text;
+                personalizedQuestion.correctAnswer = rubric;
+                personalizedQuestion.id = `Q${index + 1}-${Math.random().toString(36).substr(2, 5)}`; // ID unico
+                delete personalizedQuestion.placeholders; // Pulisce
+            }
+             personalizedQuestion.id = `Q${index + 1}-${Math.random().toString(36).substr(2, 5)}`; // ID unico
+            return personalizedQuestion;
+        }
+
+
+        // Gestione della generazione (Submit Form)
+        async function handleGenerateExams(e) {
+            e.preventDefault();
+            const topic = document.getElementById('topic').value.trim();
+            const statusDiv = document.getElementById('generation-status');
+            statusDiv.classList.remove('hidden');
+            statusDiv.textContent = "1/3: Generazione Domande (AI) in corso...";
+
+            // Raccolta dei dati sugli studenti
+            const classInputs = document.querySelectorAll('#class-inputs input');
+            let totalExamsToGenerate = 0;
+            const classData = [];
+
+            classInputs.forEach(input => {
+                const count = parseInt(input.value, 10);
+                if (count > 0) {
+                    totalExamsToGenerate += count;
+                    classData.push({
+                        count: count,
+                        year: input.dataset.year,
+                        section: input.dataset.section,
+                        spec: input.dataset.spec,
+                        classId: `${input.dataset.year}${input.dataset.section}`
+                    });
+                }
+            });
+
+            if (totalExamsToGenerate === 0) {
+                statusDiv.textContent = "Errore: Inserisci il numero di studenti per almeno una classe.";
+                statusDiv.classList.add('text-danger');
+                return;
+            }
+
+            // 1. Chiamata AI per le Domande Master
+            const masterQuestions = await generateQuestionsAndRubric(topic);
+            
+            if (!masterQuestions || masterQuestions.length === 0) {
+                statusDiv.textContent = "Errore: Impossibile generare le domande. Controlla la console.";
+                return;
+            }
+            
+            statusDiv.textContent = `2/3: Domande Master generate. Inizio personalizzazione e salvataggio per ${totalExamsToGenerate} verifiche.`;
+            
+            // 2. Personalizzazione e Salvataggio su Firestore
+            let examCount = 0;
+            let currentClassIndex = 0;
+            let studentCounterInClass = 1;
+
+            for (const classConfig of classData) {
+                for (let i = 0; i < classConfig.count; i++) {
+                    
+                    const studentLabel = `Studente ${i + 1}`;
+                    const examId = `EXAM-${classConfig.classId}-${Date.now()}-${i}`;
+                    
+                    // Personalizza le domande per questo specifico studente
+                    const personalizedExam = masterQuestions.map((q, index) => personalizeQuestion(q, index));
+                    
+                    const examDoc = {
+                        topic: topic,
+                        classYear: classConfig.year,
+                        classSection: classConfig.section,
+                        classSpec: classConfig.spec,
+                        classId: classConfig.classId,
+                        examId: examId,
+                        studentLabel: studentLabel,
+                        studentName: '',
+                        studentSurname: '',
+                        questions: personalizedExam,
+                        status: 'Pending', // Pending, Processing, Corrected, Signaled
+                        scoreMax: 120,
+                        scoreAchieved: 0,
+                        finalGrade: 'N.A.',
+                        aiDetection: "Non ancora corretto.",
+                        createdAt: new Date().toISOString()
+                    };
+
+                    await setDoc(doc(window.db, EXAM_COLLECTION_PATH, examId), examDoc);
+                    examCount++;
+                    statusDiv.textContent = `2/3: Salvataggio... (Verifica ${examCount} di ${totalExamsToGenerate})`;
+                }
+            }
+
+            statusDiv.textContent = `3/3: Generazione completata! ${totalExamsToGenerate} verifiche salvate.`;
+            setTimeout(() => statusDiv.classList.add('hidden'), 5000);
+        }
+
+        // Listener Firestore per Dashboard Docente
+        function listenForExams() {
+            const q = query(collection(window.db, EXAM_COLLECTION_PATH));
+            
+            onSnapshot(q, (snapshot) => {
+                const exams = [];
+                snapshot.forEach((doc) => {
+                    exams.push(doc.data());
+                });
+                renderExamTables(exams);
+            }, (error) => {
+                console.error("Errore nel listener Firestore:", error);
+                showModal("Errore Database", "Impossibile caricare i dati delle verifiche. Controlla i permessi o la configurazione.");
+            });
+        }
+
+        // 2.1 Rendering Tabelle Dashboard Docente
+        function renderExamTables(exams) {
+            const pendingContainer = document.getElementById('pending-exams-container');
+            const completedContainer = document.getElementById('completed-exams-container');
+
+            // Raggruppamento
+            const groupedExams = exams.reduce((acc, exam) => {
+                const statusType = exam.status === 'Corrected' || exam.status === 'Signaled' ? 'Completed' : 'Pending';
+                const classKey = exam.classId;
+
+                acc[statusType] = acc[statusType] || {};
+                acc[statusType][classKey] = acc[statusType][classKey] || [];
+                acc[statusType][classKey].push(exam);
+                return acc;
+            }, {});
+
+            // Rendering Pending
+            pendingContainer.innerHTML = '';
+            const pendingClasses = Object.keys(groupedExams.Pending || {}).sort();
+            if (pendingClasses.length === 0) {
+                pendingContainer.innerHTML = `<p class="text-gray-500">Nessuna verifica in attesa di compilazione o correzione.</p>`;
+            } else {
+                pendingClasses.forEach(classKey => {
+                    const classExams = groupedExams.Pending[classKey];
+                    pendingContainer.innerHTML += `
+                        <h4 class="text-lg font-semibold mt-4 mb-2 text-primary">${classKey} - Verifiche In Attesa (${classExams.length})</h4>
+                        <div class="space-y-2">
+                            ${classExams.map(exam => `
+                                <div class="p-3 bg-indigo-50 rounded-lg flex justify-between items-center shadow-sm">
+                                    <div>
+                                        <p class="font-medium text-gray-800">${exam.studentName || exam.studentLabel} (${exam.classSpec})</p>
+                                        <p class="text-xs text-gray-600">Link Studente: ${exam.topic}</p>
+                                    </div>
+                                    <button onclick="copyLink('${window.location.origin}${window.location.pathname}?examId=${exam.examId}')" class="text-sm bg-primary text-white py-1 px-3 rounded-md hover:bg-indigo-700 transition">Copia Link</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                });
+            }
+
+            // Rendering Completed/Signaled
+            completedContainer.innerHTML = '';
+            const completedClasses = Object.keys(groupedExams.Completed || {}).sort();
+            if (completedClasses.length === 0) {
+                completedContainer.innerHTML = `<p class="text-gray-500">Nessun risultato corretto disponibile.</p>`;
+            } else {
+                 completedClasses.forEach(classKey => {
+                    const classExams = groupedExams.Completed[classKey];
+                    completedContainer.innerHTML += `
+                        <h4 class="text-lg font-semibold mt-4 mb-2 text-danger">${classKey} - Risultati (${classExams.length})</h4>
+                        <div class="space-y-2">
+                            ${classExams.map(exam => {
+                                const isSignaled = exam.status === 'Signaled';
+                                const bgColor = isSignaled ? 'bg-red-100 border-red-400' : 'bg-green-50 border-green-400';
+                                const textColor = isSignaled ? 'text-red-700' : 'text-green-700';
+                                
+                                return `
+                                <div class="p-3 ${bgColor} rounded-lg flex justify-between items-center shadow-sm border">
+                                    <div>
+                                        <p class="font-medium ${textColor}">${exam.studentName || exam.studentLabel} (${exam.classSpec}) - Voto: ${exam.finalGrade}/10</p>
+                                        <p class="text-xs text-gray-600">${exam.aiDetection}</p>
+                                    </div>
+                                    <button onclick="viewCompletedExam('${exam.examId}')" class="text-sm bg-secondary text-white py-1 px-3 rounded-md hover:bg-green-700 transition">Vedi Dettagli</button>
+                                </div>
+                            `}).join('')}
+                        </div>
+                    `;
+                });
+            }
+        }
+        
+        // Funzione per copiare il link
+        window.copyLink = (link) => {
+             // Utilizza una textarea temporanea per la compatibilità con l'iframe
+            const tempInput = document.createElement('textarea');
+            tempInput.value = link;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            
+            try {
+                document.execCommand('copy');
+                showModal("Link Copiato!", "Il link della verifica è stato copiato negli appunti.");
+            } catch (err) {
+                console.error('Errore nella copia:', err);
+                showModal("Errore", "Impossibile copiare il link. Copialo manualmente dalla console.");
+            }
+            document.body.removeChild(tempInput);
+        };
+
+        // Funzione per visualizzare l'esame corretto (simula il click sul link dello studente)
+        window.viewCompletedExam = (examId) => {
+            window.location.href = `${window.location.origin}${window.location.pathname}?examId=${examId}&view=corrected`;
+        };
+
+
+        // 2. Vista Studente (Compilazione & Correzione)
+        async function loadStudentExam(examId) {
+            const contentDiv = document.getElementById('content');
+            
+            // Tentativo di caricamento iniziale
+            const docRef = doc(window.db, EXAM_COLLECTION_PATH, examId);
+            const docSnap = await getDoc(docRef);
+
+            if (!docSnap.exists()) {
+                contentDiv.innerHTML = `<div class="bg-red-100 p-8 rounded-xl text-red-700">Errore: Verifica non trovata.</div>`;
+                return;
+            }
+
+            const examData = docSnap.data();
+
+            if (new URLSearchParams(window.location.search).get('view') === 'corrected') {
+                // Se è una visualizzazione da docente/link corretto, mostra la stampa
+                generatePrintableExam(examData);
+                return;
+            }
+
+            if (examData.status === 'Corrected' || examData.status === 'Signaled' || examData.status === 'Processing') {
+                renderFinalResult(examId, examData.finalGrade, examData.aiDetection);
+                return;
+            }
+
+            // Attiva i listener di sicurezza solo se l'esame è attivo
+            mountSecurityListeners();
+            
+            // Struttura del Form d'Esame
+            contentDiv.innerHTML = `
+                <div id="printable-content" class="exam-area max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-2xl border border-primary/20">
+                    <header class="mb-8 border-b pb-4">
+                        <h2 class="text-3xl font-extrabold text-primary">Verifica di Informatica Avanzata</h2>
+                        <h3 class="text-xl font-medium text-gray-700 mt-1">${examData.topic}</h3>
+                    </header>
+
+                    <!-- Dettagli Studente -->
+                    <div class="mb-8 space-y-3 bg-gray-50 p-4 rounded-lg border">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <input type="text" id="student-name" placeholder="Nome" required class="p-2 border rounded-md w-full focus:ring-primary focus:border-primary">
+                            <input type="text" id="student-surname" placeholder="Cognome" required class="p-2 border rounded-md w-full focus:ring-primary focus:border-primary">
+                        </div>
+                        <div class="grid grid-cols-3 gap-4">
+                            <input type="text" id="student-class" value="${examData.classYear} ${examData.classSection}" disabled class="p-2 border rounded-md bg-gray-200 w-full">
+                            <input type="text" id="student-spec" value="${examData.classSpec}" disabled class="p-2 border rounded-md bg-gray-200 w-full">
+                            <input type="date" id="exam-date" value="${new Date().toISOString().substring(0, 10)}" required class="p-2 border rounded-md w-full focus:ring-primary focus:border-primary">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-6 p-3 bg-red-100 border-l-4 border-red-500 text-red-800">
+                        <p class="font-bold">⚠️ ATTENZIONE: Protocollo Anti-Copia Attivo!</p>
+                        <ul class="list-disc list-inside text-sm mt-1 space-y-0.5">
+                            <li>Copia/Incolla (CTRL+C, CTRL+V, Tasto Destro) è **bloccato**.</li>
+                            <li>Cambiare scheda o minimizzare la finestra più di **una volta** annullerà automaticamente l'esame con punteggio 0.</li>
+                        </ul>
+                    </div>
+
+                    <form id="exam-form" class="space-y-6">
+                        ${examData.questions.map((q, index) => `
+                            <div class="question-box p-4 border rounded-lg shadow-sm bg-white">
+                                <h4 class="font-bold text-lg text-gray-800 mb-2">Domanda ${index + 1} <span class="text-sm font-normal text-gray-500">(${q.points} punti)</span></h4>
+                                
+                                <p class="text-gray-700 whitespace-pre-wrap">${q.questionText}</p>
+                                
+                                ${q.type === 'Image-Based' ? `
+                                    <div id="image-container-${q.id}" class="mt-4 p-3 bg-indigo-50 rounded-lg">
+                                        <button type="button" onclick="window.generateImage('${q.imagePrompt.replace(/'/g, "\\'")}', 'image-container-${q.id}-img')" class="btn-primary text-white py-2 px-4 text-sm rounded-lg font-semibold">
+                                            <svg class="lucide w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                            Visualizza Schema/Immagine AI
+                                        </button>
+                                        <div id="image-container-${q.id}-img" class="mt-2"></div>
+                                    </div>
+                                ` : ''}
+
+                                <textarea name="response-${index}" rows="5" required 
+                                          placeholder="Scrivi qui la tua risposta..."
+                                          class="mt-4 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary p-3 border"></textarea>
+                            </div>
+                        `).join('')}
+
+                        <button type="submit" class="w-full btn-primary text-white py-3 rounded-lg font-semibold mt-8">
+                            Consegna Verifica e Avvia Correzione Automatica
+                        </button>
+                    </form>
+                    <div id="correction-progress" class="mt-4 text-center font-bold text-lg text-primary hidden"></div>
+                </div>
+            `;
+            
+            // Gestione dell'invio del form
+            document.getElementById('exam-form').onsubmit = async (e) => {
+                e.preventDefault();
+                
+                const studentName = document.getElementById('student-name').value.trim();
+                const studentSurname = document.getElementById('student-surname').value.trim();
+
+                if (!studentName || !studentSurname) {
+                     showModal("Attenzione", "Devi inserire Nome e Cognome per consegnare l'esame.");
+                     return;
+                }
+
+                if (examInvalidated) {
+                     showModal("Esame Annullato", "La verifica è già stata annullata e non può essere inviata.");
+                     return;
+                }
+
+                // Disabilita il form durante la correzione
+                document.getElementById('exam-form').querySelectorAll('textarea, button').forEach(el => el.disabled = true);
+
+                const studentResponses = examData.questions.map((_, index) => 
+                    document.querySelector(`[name="response-${index}"]`).value
+                );
+
+                const studentInfo = { name: studentName, surname: studentSurname };
+                
+                // Avvia la correzione
+                await window.submitAndCorrectExam(examId, examData.questions, studentResponses, studentInfo);
+            };
+        }
+
+        // 3. Vista Risultato Finale
+        function renderFinalResult(examId, finalGrade, aiDetectionFlag) {
+            const contentDiv = document.getElementById('content');
+            
+            contentDiv.innerHTML = `
+                <div class="max-w-xl mx-auto bg-white p-8 rounded-xl shadow-2xl text-center border-t-4 border-secondary">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-4">Verifica Consegnata!</h2>
+                    <p class="text-gray-600 mb-6">Il sistema di correzione IA ha elaborato i risultati.</p>
+                    
+                    <div class="my-6 p-4 rounded-lg bg-indigo-50 border-2 border-primary">
+                        <p class="text-sm text-gray-600">Voto Finale (Scala 1-10):</p>
+                        <p class="text-6xl font-extrabold text-primary mt-2">${finalGrade}</p>
+                    </div>
+
+                    ${aiDetectionFlag.includes('SEGNALATO') ? `
+                        <div class="p-3 bg-red-100 text-red-700 rounded-lg font-medium mb-6 border-l-4 border-red-500">
+                            ⚠️ ${aiDetectionFlag}
+                        </div>
+                    ` : `
+                        <div class="p-3 bg-green-100 text-green-700 rounded-lg font-medium mb-6 border-l-4 border-secondary">
+                            ✅ ${aiDetectionFlag}
+                        </div>
+                    `}
+
+                    <button onclick="generatePrintableExam('${examId}')" class="w-full btn-primary text-white py-3 rounded-lg font-semibold mt-4 flex items-center justify-center">
+                        <svg class="lucide w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        Scarica Verifica Corretta e Griglia di Riferimento 📥
+                    </button>
+                    <p onclick="window.location.href = window.location.origin + window.location.pathname;" class="text-sm text-primary hover:underline cursor-pointer mt-4">Torna alla Dashboard Docente</p>
+                </div>
+            `;
+        }
+        
+        // 4. Generazione PDF (Stampa)
+        window.generatePrintableExam = async (examIdOrData) => {
+            let examData;
+            
+            if (typeof examIdOrData === 'string') {
+                const docRef = doc(window.db, EXAM_COLLECTION_PATH, examIdOrData);
+                const docSnap = await getDoc(docRef);
+                if (!docSnap.exists()) {
+                    showModal("Errore", "Dati esame non trovati.");
+                    return;
+                }
+                examData = docSnap.data();
+            } else {
+                examData = examIdOrData;
+            }
+
+            if (!examData.correctionResults) {
+                showModal("Attenzione", "La verifica non è ancora stata corretta. Attendere.");
+                return;
+            }
+
+            const printWindow = window.open('', '_blank');
+            if (!printWindow) {
+                showModal("Attenzione", "Il browser ha bloccato la finestra di stampa. Abilita i pop-up.");
+                return;
+            }
+
+            let printableHTML = `
+                <!DOCTYPE html>
+                <html lang="it">
+                <head>
+                    <title>Verifica Corretta - ${examData.studentName} ${examData.studentSurname}</title>
+                    <style>
+                        body { font-family: 'Inter', sans-serif; margin: 0; padding: 20px; font-size: 12pt; }
+                        h1, h2, h3, h4, p { margin: 0; padding: 0; color: #333; }
+                        .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+                        .student-info { display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 10pt; }
+                        .question-box { border: 1px solid #ccc; padding: 15px; margin-bottom: 15px; border-radius: 4px; page-break-inside: avoid; }
+                        .score { font-weight: bold; color: #4F46E5; }
+                        .feedback { margin-top: 5px; padding: 8px; border-left: 3px solid #10B981; background: #E6FFF5; font-size: 9pt; }
+                        .ai-signal { border-color: #EF4444 !important; background: #FEEEEE !important; color: #EF4444; font-weight: bold;}
+                        .rubric { margin-top: 5px; padding: 5px; background: #F0F0F0; border-radius: 4px; font-size: 9pt; }
+                        
+                        .grade-summary { margin-top: 30px; border: 2px solid #4F46E5; padding: 20px; border-radius: 8px; text-align: center; page-break-before: always; }
+                        .grade-summary h3 { font-size: 18pt; color: #4F46E5; }
+                        .grade-summary p { font-size: 12pt; margin-top: 5px; }
+                        .final-grade { font-size: 40pt; font-weight: bold; color: #4F46E5; margin-top: 10px; }
+                        .grid-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 9pt; }
+                        .grid-table th, .grid-table td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+                        .grid-table th { background-color: #f0f0f0; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1>Verifica di Informatica Avanzata</h1>
+                        <h2>${examData.topic}</h2>
+                    </div>
+
+                    <div class="student-info">
+                        <div>
+                            <strong>Nome e Cognome:</strong> ${examData.studentName} ${examData.studentSurname}
+                        </div>
+                        <div>
+                            <strong>Classe/Indirizzo:</strong> ${examData.classYear} ${examData.classSection} (${examData.classSpec})
+                        </div>
+                        <div>
+                            <strong>Data Consegna:</strong> ${new Date(examData.submittedAt).toLocaleDateString()}
+                        </div>
+                    </div>
+
+                    ${examData.correctionResults.map(res => `
+                        <div class="question-box">
+                            <h4 style="font-size: 11pt; margin-bottom: 5px;">Domanda ${res.qIndex + 1}</h4>
+                            <p style="font-style: italic;">${res.questionText}</p>
+                            
+                            <h5 style="margin-top: 10px; font-size: 10pt; font-weight: bold;">Risposta Studente:</h5>
+                            <p style="white-space: pre-wrap; margin-top: 3px; border: 1px dashed #eee; padding: 5px; font-size: 10pt;">${res.studentAnswer}</p>
+
+                            <div class="rubric">
+                                <strong>Rubrica (Risposta Attesa):</strong>
+                                <p style="white-space: pre-wrap; margin-top: 3px;">${res.rubric}</p>
+                            </div>
+
+                            <h5 style="margin-top: 10px; font-size: 10pt; font-weight: bold;">Valutazione: 
+                                <span class="score" style="color:${res.scoreAchieved === 0 ? '#EF4444' : '#10B981'};">
+                                    ${res.scoreAchieved} / ${res.maxPoints} Punti
+                                </span>
+                            </h5>
+                            
+                            <div class="feedback ${res.aiDetection ? 'ai-signal' : ''}">
+                                <strong>Feedback Correzione IA:</strong>
+                                <p style="margin-top: 3px;">${res.feedback}</p>
+                            </div>
+                        </div>
+                    `).join('')}
+                    
+                    <div class="grade-summary">
+                        <h3>RIEPILOGO E GRIGLIA DI RIFERIMENTO</h3>
+                        <p>Punteggio Totale Ottenuto: ${examData.scoreAchieved} / ${examData.scoreMax}</p>
+                        <p>Conversione Punteggio: ${examData.scoreAchieved} Punti x ${CONVERSION_RATE.toFixed(4)} (Fattore)</p>
+                        
+                        <div class="final-grade">${examData.finalGrade}/10</div>
+                        
+                        ${examData.aiDetection.includes('SEGNALATO') ? 
+                            `<p style="color: #EF4444; font-weight: bold; margin-top: 10px;">⚠️ SEGNALAZIONE CRITICA: ${examData.aiDetection}</p>` : 
+                            `<p style="color: #10B981; font-weight: bold; margin-top: 10px;">Status: ${examData.aiDetection}</p>`
+                        }
+                        
+                        <table class="grid-table">
+                            <thead>
+                                <tr><th>Domanda</th><th>Punti Max</th><th>Punti Ottenuti</th><th>Segnalazione IA</th></tr>
+                            </thead>
+                            <tbody>
+                                ${examData.correctionResults.map(res => `
+                                    <tr>
+                                        <td>${res.qIndex + 1} (${res.maxPoints} Punti Max)</td>
+                                        <td>${res.maxPoints}</td>
+                                        <td style="color:${res.scoreAchieved === 0 ? '#EF4444' : '#10B981'}; font-weight:bold;">${res.scoreAchieved}</td>
+                                        <td style="color:${res.aiDetection ? '#EF4444' : '#10B981'};">${res.aiDetection ? 'SÌ (Punteggio 0)' : 'NO'}</td>
+                                    </tr>
+                                `).join('')}
+                                <tr>
+                                    <td colspan="2" style="font-weight:bold;">TOTALE FINALE</td>
+                                    <td colspan="2" style="font-weight:bold; color: #4F46E5;">${examData.scoreAchieved} / ${examData.scoreMax}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                    </div>
+
+                </body>
+                </html>
+            `;
+
+            printWindow.document.write(printableHTML);
+            printWindow.document.close();
+            
+            // Attende un momento per il rendering prima di stampare
+            printWindow.onload = () => {
+                printWindow.print();
+            };
+        };
+
+        // Avvio dell'applicazione
+        window.addEventListener('DOMContentLoaded', () => {
+            window.initAuthAndRender();
+        });
+        
+    </script>
+</body>
+</html>
