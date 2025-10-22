@@ -397,47 +397,15 @@
         }
 
         // 2. Genera Immagine AI (Modalità Studente) - USA imagen-3.0-generate-002
-// 2. Genera Immagine AI (Modalità Studente) - USA imagen-3.0-generate-002
-window.generateImage = async (imagePrompt, containerId) => {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    // Mostra animazione di caricamento
-    container.innerHTML = `
-        <p class="text-primary mt-2 flex items-center">
-            <svg class="lucide w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
-                </path>
-            </svg>
-            Generazione immagine AI in corso...
-        </p>
-    `;
-
-    try {
-        // 🔒 IMPORTANTE: NON chiamare direttamente l’API Gemini dal browser!
-        // Questa chiamata deve passare da un server proxy sicuro.
-        // Qui simuliamo la risposta per evitare errori CORS o chiavi esposte.
-        
-        // Simulazione (sostituibile con chiamata al tuo server backend)
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        // Mostra immagine generata (mock)
-        container.innerHTML = `
-            <img src="https://via.placeholder.com/512x256?text=${encodeURIComponent(imagePrompt)}" 
-                 alt="Immagine generata AI"
-                 class="rounded-lg shadow-md mt-2" />
-        `;
-    } catch (error) {
-        console.error("Errore nella generazione dell’immagine:", error);
-        container.innerHTML = `
-            <p class="text-red-600 mt-2">
-                ❌ Errore nella generazione dell’immagine.<br>
-                Verifica la connessione o la chiave API.
-            </p>
-        `;
-    }
-};
+${q.type === 'Image-Based' ? `
+    <div id="image-container-${q.id}" class="mt-4 p-3 bg-indigo-50 rounded-lg">
+        <button type="button" onclick="window.generateImage('${q.imagePrompt.replace(/'/g, "\\'")}', 'image-container-${q.id}-img')" class="btn-primary text-white py-2 px-4 text-sm rounded-lg font-semibold">
+            <svg class="lucide w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            Visualizza Schema/Immagine AI
+        </button>
+        <div id="image-container-${q.id}-img" class="mt-2"></div>
+    </div>
+` : ''}
 
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${window.apiKey}`;
             const payload = { 
