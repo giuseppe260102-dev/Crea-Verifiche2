@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generatore Verifiche Scuola Superiore Avanzato</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        /* Stili per l'overlay di Violazione (Rosso Bloccante) */
+        #violation-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(185, 28, 28, 0.98); 
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10000;
+            transition: opacity 0.3s ease-in-out;
+            opacity: 0;
+            pointer-events: none;
+            backdrop-filter: blur(5px);
+        }
+        #violation-overlay.active {
+            opacity: 1;
+            pointer-events: auto; 
+        }
+        .loader {
+            border-top-color: #3498db;
+            -webkit-animation: spin 1s linear infinite;
+            animation: spin 1s linear infinite;
+        }
+        @-webkit-keyframes spin {
+            0% { -webkit-transform: rotate(0deg); }
+            100% { -webkit-transform: rotate(360deg); }
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Stili per la stampa PDF */
+        @media print {
+            body > *:not(.print-content) {
+                display: none;
+            }
+            .print-content {
+                display: block;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            #result-display {
+                box-shadow: none;
+                border: none;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+    <!-- Overlay di Violazione Anti-Copia (Blocco a Schermo Intero) -->
+    <div id="violation-overlay" class="">
+        <h1 class="text-4xl md:text-6xl font-extrabold text-white mb-4 animate-pulse uppercase tracking-widest">
+            🛑 VERIFICA ANNULLATA
+        </h1>
+        <p class="text-xl md:text-3xl text-yellow-200 mb-8 max-w-2xl">
+            La prova è stata annullata e consegnata in automatico con voto **Zero (0/100)**.
+        </p>
+        <p class="text-lg md:text-xl text-white font-mono border-t border-b py-2 mb-8">
+            IL DOCENTE È STATO NOTIFICATO DELLA VIOLAZIONE.
+        </p>
+        <button onclick="location.reload()" class="mt-10 px-8 py-3 bg-white text-red-700 font-bold rounded-xl shadow-2xl hover:bg-gray-200 transition duration-150 transform hover:scale-105">
+            Esci
+        </button>
+    </div>
+
+    <!-- Contenitore Principale -->
+    <div id="app-container" class="max-w-5xl mx-auto p-4 md:p-10">
+        <header class="text-center py-8 mb-10 bg-white rounded-xl shadow-xl border-b-4 border-indigo-600">
+            <h1 class="text-4xl font-extrabold text-indigo-800">Generatore Verifiche Scuola Superiore</h1>
+            <p id="auth-status" class="text-sm text-gray-500 mt-2 font-mono">Stato Autenticazione: In Caricamento...</p>
+        </header>
+
+        <!-- Modulo Docente (Iniziale) -->
+        <div id="teacher-mode" class="space-y-8 bg-white p-8 md:p-10 rounded-2xl shadow-2xl transition-all duration-300 border-t-8 border-indigo-600">
+            <h2 class="text-3xl font-bold text-indigo-700 mb-6 border-b pb-3">Area Docente: Configurazione Prova</h2>
+
+            <button onclick="checkConnectionStatus()" id="db-check-btn" class="w-full bg-yellow-500 text-white p-3 rounded-xl shadow-lg hover:bg-yellow-600 transition duration-150 font-bold flex items-center justify-center transform hover:scale-[1.01]">
+                <svg id="db-icon" class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10m0 0h16M4 17h16M4 7h16m0 0v10M12 7v10"></path></svg>
+                <span id="db-status-text">Verifica Connessione Database (Firestore)</span>
+            </button>
+            <div id="db-connection-result" class="text-sm font-semibold p-2 rounded-lg hidden"></div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <label class="block md:col-span-2">
+                    <span class="text-gray-700 font-medium block mb-1">Titolo della Verifica</span>
+                    <input type="text" id="exam-title" class="w-full rounded-lg border-gray-300 shadow-sm p-3 text-lg" placeholder="Es. Storia: Risorgimento Italiano">
+                </label>
+
+                <label class="block">
+                    <span class="text-gray-700 font-medium block mb-1">Classe di Destinazione</span>
+                    <select id="exam-class" class="w-full rounded-lg border-gray-300 shadow-sm p-3 text-lg">
+                        <option value="">— Seleziona Classe —</option>
+                        <optgroup label="Liceo">
+                            <option value="2I_LICEO">2I LICEO</option>
+                            <option value="2L_LICEO">2L LICEO</option>
+                            <option value="3I_LICEO">3I LICEO</option>
+                            <option value="3L_LICEO">3L LICEO</option>
+                            <option value="5I_LICEO">5I LICEO</option>
+                            <option value="5L_LICEO">5L LICEO</option>
+                        </optgroup>
+                        <optgroup label="Sistema Moda">
+                            <option value="1A_MODA">1A SISTEMA MODA</option>
+                            <option value="1B_MODA">1B SISTEMA MODA</option>
+                        </optgroup>
+                    </select>
+                </label>
+            </div>
+
+            <label class="block">
+                <span class="text-gray-700 font-medium block mb-1">Istruzioni (Visibili agli Studenti)</span>
+                <textarea id="exam-description" rows="3" class="w-full rounded-lg border-gray-300 shadow-sm p-3" placeholder="Specifiche su durata, punteggio (10 punti per domanda), ecc."></textarea>
+            </label>
+
+            <!-- Sezione Generazione Domande AI -->
+            <div class="border-t pt-6 mt-6 border-indigo-100">
+                <h3 class="text-2xl font-semibold text-indigo-700 mb-4">Generazione Mista AI (Correzione Totale AI)</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <label class="block">
+                        <span class="text-gray-700 font-medium block mb-1">N° Totale Domande (Max 20)</span>
+                        <input type="number" id="num-questions" class="block w-full rounded-lg border-gray-300 shadow-md p-3" value="5" min="5" max="20">
+                    </label>
+                    <div class="block md:col-span-2">
+                        <span class="text-gray-700 font-medium block mb-1">Argomento Esatto</span>
+                        <input type="text" id="ai-topic" class="block w-full rounded-lg border-gray-300 shadow-md p-3" placeholder="Es. 'La caduta dell'Impero Romano' o 'I logaritmi'">
+                    </div>
+                </div>
+                
+                <label class="block">
+                    <span class="text-gray-700 font-medium block mb-1">N° Copie Univoche da Generare (Max 30)</span>
+                    <input type="number" id="num-copies" class="block w-full rounded-lg border-gray-300 shadow-md p-3" value="1" min="1" max="30" placeholder="N° Copie (Max 30)">
+                </label>
+                
+                <!-- PULSANTE UNIFICATO -->
+                <button onclick="generateAndPublish()" id="generate-btn" class="mt-4 w-full bg-green-600 text-white p-3 rounded-xl shadow-lg hover:bg-green-700 transition duration-150 font-bold flex items-center justify-center transform hover:scale-[1.01]">
+                    <svg id="generate-icon" class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                    <span>Genera & Pubblica <span id="copies-count-btn">1</span> Copia Univoca (Attiva Anti-Copia)</span>
+                </button>
+            </div>
+
+            <!-- Link di Condivisione (Visibile dopo la Pubblicazione) -->
+            <div id="share-link-section" class="hidden mt-6 bg-indigo-50 p-6 rounded-xl border border-indigo-300 shadow-inner">
+                <h4 class="text-lg font-bold text-indigo-800 mb-3">Link di Condivisione (Ogni link è una copia univoca)</h4>
+                <p class="text-sm text-indigo-600 mb-4 font-semibold">Copia il testo qui sotto e invialo ai tuoi studenti.</p>
+                <div id="generated-links-container" class="space-y-3">
+                    <!-- I link generati appariranno qui -->
+                </div>
+            </div>
+
+            <!-- Lista Risultati (Per il Docente) -->
+            <div class="mt-10 border-t pt-6 border-indigo-200">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-2xl font-semibold text-indigo-700">Risultati e Violazioni Rilevate</h3>
+                    <label class="block">
+                        <span class="text-gray-600 font-medium text-sm">Filtra per Classe:</span>
+                        <select id="class-filter" class="rounded-lg border-gray-300 shadow-sm p-2 text-base" onchange="setupResultsListener()">
+                            <option value="ALL">TUTTE LE CLASSI</option>
+                            <!-- Options populate dynamicly -->
+                        </select>
+                    </label>
+                </div>
+                <div id="results-list" class="space-y-4">
+                    <p class="text-gray-500">I risultati appariranno qui in tempo reale. Seleziona una classe per filtrare.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modulo Studente -->
+        <div id="student-mode" class="hidden space-y-6 bg-white p-8 md:p-10 rounded-2xl shadow-2xl transition-all duration-300 border-t-8 border-red-600">
+            <h2 id="student-exam-title" class="text-3xl font-bold text-indigo-700 mb-2">Caricamento Verifica...</h2>
+            <p id="student-exam-description" class="text-gray-600 mb-4 border-b pb-4"></p>
+
+            <!-- Banner Anti-Cheating e Anti-AI -->
+            <div class="p-4 rounded-lg font-semibold mb-6 text-orange-800 border-l-4 border-orange-500 bg-orange-100">
+                ⚠️ **MAX ATTENZIONE!** Sistema anti-copia/AI attivo:
+                <ul class="list-disc list-inside mt-2 text-sm space-y-1">
+                    <li>Qualsiasi **cambio di scheda/finestra** annulla la prova (Voto: 0).</li>
+                    <li>Le funzioni **Copia/Incolla** sono disabilitate.</li>
+                    <li>Ritorna subito nella finestra di verifica o la prova sarà annullata.</li>
+                </ul>
+            </div>
+
+            <label class="block mb-6">
+                <span class="text-gray-700 font-medium block mb-1">Nome e Cognome (Richiesto)</span>
+                <input type="text" id="student-name" class="w-full rounded-lg border-gray-300 shadow-sm p-3 text-lg" placeholder="Es. Mario Rossi">
+            </label>
+
+            <button onclick="startExam()" id="start-exam-btn" class="w-full bg-red-700 text-white p-3 rounded-xl shadow-lg hover:bg-red-800 transition duration-150 font-bold text-xl transform hover:scale-[1.01]">
+                INIZIA LA VERIFICA E ATTIVA BLOCCO ANTI-COPIA
+            </button>
+
+            <!-- Quiz effettivo -->
+            <div id="quiz-container" class="hidden mt-8 space-y-8">
+                <!-- Le domande della verifica appariranno qui -->
+            </div>
+
+            <button onclick="submitExam()" id="submit-exam-btn" class="hidden w-full bg-green-700 text-white p-4 rounded-xl shadow-lg hover:bg-green-800 transition duration-150 font-bold text-xl mt-8 transform hover:scale-[1.01]">
+                CONSEGNA E OTTIENI RISULTATO (Correzione Automatica AI)
+            </button>
+
+            <!-- Risultato dopo la Consegna (Area stampabile) -->
+            <div id="result-display" class="hidden mt-8 p-8 rounded-xl text-center shadow-inner">
+                <div class="print-content" id="print-area">
+                    <h3 class="text-3xl font-bold mb-3 text-indigo-700">Verifica Consegnata con Successo!</h3>
+                    <p id="final-score" class="text-2xl font-semibold mb-4"></p>
+                    <p class="text-sm text-gray-500 mb-4">Studente: <span id="result-student-name"></span> | Classe: <span id="result-student-class"></span> | Data: <span id="result-date"></span></p>
+                    <div id="answers-summary" class="mt-6 text-left border p-4 rounded-lg bg-gray-50">
+                        <h4 class="text-xl font-bold mb-3 text-gray-800">Riepilogo Punti Acquisiti (Correzione AI)</h4>
+                    </div>
+                </div>
+                
+                <button onclick="window.print()" class="mt-6 px-6 py-3 bg-indigo-600 text-white rounded-xl shadow-lg hover:bg-indigo-700 font-bold transition duration-150 flex items-center justify-center mx-auto">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z"></path></svg>
+                    Scarica/Stampa PDF Risultato
+                </button>
+            </div>
+        </div>
+
+        <!-- Messaggio di Caricamento/Errore -->
+        <div id="loading-message" class="text-center p-6 hidden">
+            <svg id="loading-spinner" class="loader h-8 w-8 mr-3 text-indigo-600 inline border-4 border-t-4 border-gray-200 rounded-full" viewBox="0 0 0 24"></svg>
+            <span id="loading-text" class="text-lg text-indigo-700 font-medium">Caricamento in corso...</span>
+        </div>
+
+    </div>
+
+    <!-- Script Logica -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, addDoc, serverTimestamp, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // CHIAVE API FORNITA DALL'UTENTE
+        const API_KEY = "AIzaSyAzYH13cNVA74Hbp1I2cagCncCusyk_tn4"; 
+
+        // Configurazione Firebase (Hardcoded come richiesto)
+        const hardcodedFirebaseConfig = {
+            apiKey: "AIzaSyBJzjPpfxgGbt8atUviVXonByfszGhpyxA", // La chiave API Firebase è distinta dalla chiave Gemini
+            authDomain: "verifiche-595e5-8a7a0.firebaseapp.com",
+            projectId: "verifiche-595e5-8a7a0",
+            storageBucket: "verifiche-595e5-8a7a0.firebasestorage.app",
+            messagingSenderId: "859645064209",
+            appId: "1:859645064209:web:5e310b8553b1a4095b6db0",
+            measurementId: "G-KEPTYZZLCX"
+        };
+        
+        // Usiamo il projectId come identificatore dell'app nel percorso Firestore
+        const APP_IDENTIFIER = hardcodedFirebaseConfig.projectId; 
+        
+        let app, db, auth, userId = null;
+        let originalQuestions = []; // Le domande generate in Teacher Mode
+        let currentExamId = null;
+        let isExamActive = false;
+        let hasViolated = false;
+        let availableClasses = new Set(); // Per il filtro del docente
+
+        // Costanti API
+        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+
+        // Funzione per mescolare un array
+        function shuffleArray(array) {
+            let currentIndex = array.length, randomIndex;
+            let newArray = [...array];
+            while (currentIndex != 0) {
+                randomIndex = Math.floor(Math.random() * currentIndex);
+                currentIndex--;
+                [newArray[currentIndex], newArray[randomIndex]] = [newArray[randomIndex], newArray[currentIndex]];
+            }
+            return newArray;
+        }
+        
+        // Estrazione e Pulizia JSON per Robustezza
+        function extractJsonString(rawText) {
+            if (!rawText) return null;
+            // Tenta di trovare il blocco JSON circondato da markdown (```json ... ```)
+            const match = rawText.match(/```json\s*([\s\S]*?)\s*```/i);
+            if (match && match[1]) {
+                return match[1].trim();
+            }
+            // Rimuove potenziali wrapper non conformi (es. solo ``` o testo prima di [)
+            let cleaned = rawText.trim();
+            if (cleaned.startsWith('```')) {
+                cleaned = cleaned.replace(/^```(\w*\s*\n)?/, '').replace(/```$/, '').trim();
+            }
+             // Se inizia con [ o { (il che implica che è JSON, usiamo l'originale ripulito.
+            if (cleaned.startsWith('[') || cleaned.startsWith('{')) {
+                return cleaned;
+            }
+            // Altrimenti, fallisci
+            return null;
+        }
+
+        // Inizializzazione Firebase (utilizzando la configurazione hardcoded)
+        function initializeFirebase() {
+            try {
+                app = initializeApp(hardcodedFirebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                signInAnonymously(auth).then((userCredential) => {
+                    userId = userCredential.user.uid;
+                    document.getElementById('auth-status').textContent = `ID Docente (Accesso Anonimo): ${userId}`;
+                    checkMode();
+                }).catch(e => {
+                    console.error("Errore nell'autenticazione anonima:", e);
+                    document.getElementById('loading-text').textContent = "Errore di autenticazione Firebase. Controlla la console.";
+                });
+
+            } catch (e) {
+                console.error("Errore nell'inizializzazione di Firebase:", e);
+                document.getElementById('loading-text').textContent = "Errore di configurazione Firebase.";
+            }
+        }
+
+        // === PULSANTE VERIFICA CONNESSIONE DATABASE ===
+        window.checkConnectionStatus = async function() {
+            const resultDiv = document.getElementById('db-connection-result');
+            const btn = document.getElementById('db-check-btn');
+            resultDiv.classList.remove('hidden', 'bg-red-200', 'bg-green-200');
+            resultDiv.classList.add('bg-yellow-100');
+            resultDiv.textContent = 'Tentativo di connessione e scrittura...';
+            btn.disabled = true;
+
+            if (!db || !userId) {
+                resultDiv.classList.remove('bg-yellow-100');
+                resultDiv.classList.add('bg-red-200');
+                resultDiv.textContent = 'Errore: Firebase non inizializzato o utente non autenticato.';
+                btn.disabled = false;
+                return;
+            }
+
+            try {
+                const testDocRef = doc(db, `artifacts/${APP_IDENTIFIER}/users/${userId}/test_connection`, 'test_doc');
+                await setDoc(testDocRef, { timestamp: serverTimestamp(), status: 'connected' });
+                await getDoc(testDocRef); 
+                await setDoc(testDocRef, { status: 'success' }); 
+
+                resultDiv.classList.remove('bg-yellow-100');
+                resultDiv.classList.add('bg-green-200');
+                resultDiv.textContent = '✅ Connessione a Firestore riuscita! (Lettura e Scrittura OK)';
+            } catch (e) {
+                console.error("Errore test connessione DB:", e);
+                resultDiv.classList.remove('bg-yellow-100');
+                resultDiv.classList.add('bg-red-200');
+                resultDiv.textContent = `❌ Errore di connessione a Firestore: ${e.message}. Controlla le regole di sicurezza.`;
+            } finally {
+                btn.disabled = false;
+            }
+        };
+
+        // Funzione per il Backoff Esponenziale
+        async function exponentialBackoffFetch(url, options, maxRetries = 5) {
+            for (let i = 0; i < maxRetries; i++) {
+                let response = null;
+                try {
+                    response = await fetch(url, options);
+
+                    if (response.status === 429 && i < maxRetries - 1) {
+                        const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    
+                    const responseText = await response.text();
+                    
+                    if (!responseText && response.status !== 204) {
+                        throw new Error(`API Error ${response.status}: Empty response body. Response Status: ${response.status}`);
+                    }
+
+                    if (!response.ok) {
+                        let errorData = {};
+                        try {
+                            errorData = JSON.parse(responseText);
+                        } catch(e) {
+                            throw new Error(`API Error ${response.status} (Non-JSON Response): ${responseText.substring(0, 100)}...`);
+                        }
+                        throw new Error(`API Error ${response.status}: ${errorData.error?.message || response.statusText}`);
+                    }
+                    
+                    return JSON.parse(responseText);
+
+                } catch (error) {
+                    if (i === maxRetries - 1) {
+                        throw error;
+                    }
+                    const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                    console.warn(`Tentativo API fallito (ritenterà tra ${Math.round(delay/100)/10}s): ${error.message}`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+            throw new Error("Maximum retries reached for API call.");
+        }
+
+        // === LOGICA DOCENTE ===
+
+        // Aggiorna il conteggio delle copie nel pulsante
+        document.getElementById('num-copies').addEventListener('input', (e) => {
+            const num = parseInt(e.target.value) || 1;
+            document.getElementById('copies-count-btn').textContent = num;
+        });
+
+        // Generazione AI + Pubblicazione (Passo unico)
+        window.generateAndPublish = async function() {
+            if (!userId) { alertUser("Autenticazione in corso, riprova tra poco."); return; }
+
+            const topic = document.getElementById('ai-topic').value.trim();
+            const title = document.getElementById('exam-title').value.trim();
+            const description = document.getElementById('exam-description').value.trim();
+            const classId = document.getElementById('exam-class').value;
+            const numCopies = parseInt(document.getElementById('num-copies').value) || 1;
+            const numQuestions = Math.min(parseInt(document.getElementById('num-questions').value) || 5, 20); // Max 20
+
+            if (!topic || !title || !classId) {
+                alertUser(`Completa tutti i campi: Titolo, Argomento, e Classe.`);
+                return;
+            }
+            
+            const btn = document.getElementById('generate-btn');
+            btn.disabled = true;
+            document.getElementById('loading-text').parentElement.classList.remove('hidden');
+            
+            originalQuestions = []; // Reset domande
+
+            const mcCount = Math.ceil(numQuestions * 0.6); // 60% MC
+            const openCount = numQuestions - mcCount; // 40% Aperte
+
+            const systemPrompt = `Sei un professore esperto di scuola superiore. Genera un array JSON di ${numQuestions} domande in italiano sull'argomento fornito, adatte a studenti delle superiori. 
+            
+            Il mix di domande DEVE essere il seguente: 
+            - Circa ${mcCount} domande a Risposta Multipla (MULTIPLE_CHOICE), con 4 opzioni di cui solo una corretta.
+            - Circa ${openCount} domande a Risposta Aperta (OPEN_ENDED).
+
+            Distribuisci la difficoltà equamente tra: 'semplici', 'complesse' e 'difficilissime'.
+            
+            Il formato JSON DEVE essere un array di oggetti con i seguenti campi:
+            - questionText (stringa: il testo della domanda)
+            - type (stringa: "MULTIPLE_CHOICE" o "OPEN_ENDED")
+            - options (array di stringhe: SOLO per MULTIPLE_CHOICE)
+            - correctAnswer (stringa: SOLO per MULTIPLE_CHOICE)
+            - suggestedAnswer (stringa: risposta di riferimento del docente per OPEN_ENDED)
+            `;
+
+            try {
+                // 1/2. Generazione Domande (Veloce)
+                btn.innerHTML = `<svg class="loader h-5 w-5 mr-3 border-white border-2 border-t-2 rounded-full" viewBox="0 0 24 24"></svg><span>1/2: Generazione di ${numQuestions} domande miste...</span>`;
+
+                const geminiResult = await exponentialBackoffFetch(GEMINI_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: `Argomento: ${topic}. Genera ${numQuestions} domande miste.` }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        "questionText": { "type": "STRING" },
+                                        "type": { "type": "STRING", "enum": ["MULTIPLE_CHOICE", "OPEN_ENDED"] },
+                                        "options": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                        "correctAnswer": { "type": "STRING" },
+                                        "suggestedAnswer": { "type": "STRING" }
+                                    },
+                                    required: ["questionText", "type"]
+                                }
+                            }
+                        }
+                    })
+                });
+                
+                const rawText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text;
+                const jsonString = extractJsonString(rawText);
+
+                if (!jsonString) {
+                     throw new Error("L'AI non ha prodotto una stringa JSON utilizzabile.");
+                }
+                
+                try {
+                    originalQuestions = JSON.parse(jsonString).map((q) => ({
+                        id: crypto.randomUUID(),
+                        ...q,
+                    }));
+                } catch (e) {
+                    console.error("Errore di Parsing JSON:", e, "Stringa ricevuta:", jsonString);
+                    throw new Error("L'AI non ha prodotto un JSON valido. Riprova. Dettagli errore: " + e.message.substring(0, 50) + "...");
+                }
+                
+                // 2/2. Pubblicazione e Generazione Link
+                btn.innerHTML = `<svg class="loader h-5 w-5 mr-3 border-white border-2 border-t-2 rounded-full" viewBox="0 0 24 24"></svg><span>2/2: Pubblicazione di ${numCopies} copie uniche e creazione link...</span>`;
+                await publishCopies(title, description, classId, numCopies);
+
+            } catch (error) {
+                console.error("Errore nella generazione AI o pubblicazione:", error);
+                alertUser(`Errore durante l'operazione. Messaggio: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<svg id="generate-icon" class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg><span>Genera & Pubblica <span id="copies-count-btn">${numCopies}</span> Copia Univoca (Attiva Anti-Copia)</span>`;
+                document.getElementById('loading-text').parentElement.classList.add('hidden');
+            }
+        };
+
+        
+        // Funzione di Pubblicazione separata
+        async function publishCopies(title, description, classId, numCopies) {
+             const linkContainer = document.getElementById('generated-links-container');
+             linkContainer.innerHTML = '';
+             document.getElementById('share-link-section').classList.remove('hidden'); 
+
+             for (let i = 0; i < numCopies; i++) {
+                const linkId = crypto.randomUUID();
+                
+                let questionsForCopy = shuffleArray(originalQuestions);
+
+                questionsForCopy = questionsForCopy.map(q => {
+                    if (q.type === 'MULTIPLE_CHOICE' && q.options) {
+                        return { ...q, options: shuffleArray(q.options) };
+                    }
+                    return q;
+                });
+                
+                const examData = {
+                    title,
+                    description,
+                    classId,
+                    questions: questionsForCopy, 
+                    teacherId: userId,
+                    createdAt: serverTimestamp(),
+                    linkId,
+                    copyNumber: i + 1
+                };
+
+                const examRef = doc(db, `artifacts/${APP_IDENTIFIER}/public/data/exams`, linkId);
+                await setDoc(examRef, examData);
+
+                const shareLink = `${window.location.origin}${window.location.pathname}?examId=${linkId}`;
+                const dateString = new Date().toLocaleDateString('it-IT');
+                
+                // TESTO DI CONDIVISIONE ENHANCED
+                const shareText = `Verifica: ${title}
+Classe: ${classId}
+Data: ${dateString}
+Studente: [INSERISCI NOME E COGNOME QUI]
+
+Link di Verifica Univoco: //${shareLink.replace('https://', '').replace('http://', '')}`; // Rimosso https/http per testo
+
+                // Aggiungi il link al contenitore UI
+                const linkDiv = document.createElement('div');
+                linkDiv.className = 'bg-white p-3 rounded-lg border border-indigo-200';
+                linkDiv.innerHTML = `
+                    <p class="font-bold text-sm text-indigo-700">COPIA N° ${i + 1} (${linkId.substring(0, 8)}...)</p>
+                    <p class="break-all text-xs font-mono select-all mt-1">Link: //${shareLink.replace('https://', '').replace('http://', '')}</p>
+                    <button onclick="copyLinkText('${shareText.replace(/\n/g, '\\n').replace(/'/g, "\\'")}')" class="mt-2 text-xs bg-indigo-400 text-white px-3 py-1 rounded-lg hover:bg-indigo-500 transition duration-150">Copia Testo Condivisione</button>
+                `;
+                linkContainer.appendChild(linkDiv);
+            }
+
+            alertUser(`Verifica pubblicata con successo! Generate ${numCopies} copie univoche.`);
+        }
+
+        window.copyLinkText = function(text) {
+             try {
+                const tempTextArea = document.createElement('textarea');
+                tempTextArea.value = text.replace(/\\n/g, '\n');
+                document.body.appendChild(tempTextArea);
+                tempTextArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempTextArea);
+                alertUser("Testo di condivisione copiato negli appunti.");
+            } catch (e) {
+                console.error("Impossibile copiare:", e);
+                alertUser("Impossibile copiare il link (browser non supportato).");
+            }
+        }
+
+        // Snapshot Listener per i Risultati (Docente)
+        window.setupResultsListener = function() {
+            if (!userId || !db) return;
+
+            const selectedClass = document.getElementById('class-filter')?.value;
+            const resultsRef = collection(db, `artifacts/${APP_IDENTIFIER}/users/${userId}/results`);
+            
+            let q;
+            if (selectedClass && selectedClass !== 'ALL') {
+                q = query(resultsRef, where('classId', '==', selectedClass));
+            } else {
+                q = query(resultsRef); 
+            }
+
+            onSnapshot(q, (snapshot) => {
+                const list = document.getElementById('results-list');
+                const filter = document.getElementById('class-filter');
+                list.innerHTML = '';
+                
+                if (selectedClass === 'ALL') {
+                    availableClasses.clear();
+                    snapshot.forEach(doc => {
+                        const classId = doc.data().classId;
+                        if (classId) availableClasses.add(classId);
+                    });
+                    populateClassFilter(availableClasses, filter.value);
+                }
+
+                if (snapshot.empty) {
+                    list.innerHTML = '<p class="text-gray-500 italic">Nessun risultato trovato per la selezione corrente.</p>';
+                    return;
+                }
+
+                snapshot.docs
+                    .map(doc => ({ id: doc.id, ...doc.data() }))
+                    .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0)) 
+                    .forEach(result => {
+                    const isViolation = result.violationDetected;
+                    const div = document.createElement('div');
+                    div.className = `p-4 rounded-xl shadow-md border ${isViolation ? 'bg-red-100 border-red-600' : 'bg-green-50 border-green-600'} transition-all`;
+
+                    const violationText = isViolation 
+                        ? `<span class="text-red-800 font-bold uppercase ml-2 px-3 py-1 bg-red-300 rounded-full text-xs shadow-md">VERIFICA ANNULLATA</span>` 
+                        : '';
+                    
+                    const dateDisplay = result.submittedAt ? new Date(result.submittedAt.seconds * 1000).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'N/D';
+
+                    const scoreDisplay = isViolation 
+                            ? `<span class="text-3xl font-extrabold text-red-700">0 / 100</span>`
+                            : `<span class="text-3xl font-extrabold text-green-700">${result.scorePercentage} / 100</span>`; // Voto finale
+
+                    div.innerHTML = `
+                        <div class="flex justify-between items-start border-b pb-2 mb-2">
+                            <p class="font-bold text-xl text-gray-800">${result.studentName}</p>
+                            <div class="flex items-center">${violationText}</div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-4 text-sm text-gray-700 py-2 border-b border-gray-200">
+                             <p>Classe: <span class="font-semibold">${result.classId}</span></p>
+                             <p>Verifica: <span class="font-semibold">${result.examTitle} (Copia ${result.copyNumber})</span></p>
+                             <p>Data Consegna: <span class="font-semibold">${dateDisplay}</span></p>
+                        </div>
+                        <div class="flex justify-between items-center pt-2">
+                             <p class="text-md font-semibold">Voto Finale:</p>
+                             ${scoreDisplay}
+                        </div>
+                        ${isViolation ? `<p class="text-sm text-red-600 mt-2 italic">Dettaglio Violazione: ${result.violationDetails}</p>` : ''}
+                    `;
+                    list.appendChild(div);
+                });
+            }, (error) => {
+                console.error("Errore nell'ascolto dei risultati:", error);
+            });
+        }
+        
+        function populateClassFilter(classes, selectedValue) {
+            const filter = document.getElementById('class-filter');
+            const allOption = filter.querySelector('option[value="ALL"]');
+            filter.innerHTML = '';
+            filter.appendChild(allOption || new Option('TUTTE LE CLASSI', 'ALL'));
+
+            const orderedClasses = ['2I_LICEO', '2L_LICEO', '3I_LICEO', '3L_LICEO', '5I_LICEO', '5L_LICEO', '1A_MODA', '1B_MODA'];
+
+            orderedClasses.forEach(classId => {
+                 if (classes.has(classId) || true) { 
+                    const option = new Option(classId, classId);
+                    if (classId === selectedValue) {
+                        option.selected = true;
+                    }
+                    filter.appendChild(option);
+                 }
+            });
+        }
+
+
+        // === LOGICA STUDENTE ===
+
+        // Funzione di AI per la correzione delle risposte aperte
+        async function gradeOpenEndedAnswer(questionText, studentAnswer, suggestedAnswer) {
+            if (!studentAnswer || studentAnswer.length < 5) return 0; // 0 se vuota o troppo corta
+
+            const gradingPrompt = `Sei un correttore di verifiche imparziale.
+            Compara la Risposta dello Studente alla Risposta di Riferimento per la domanda: "${questionText}".
+            Assegna un punteggio da 0 a 10 (solo numeri interi: 0, 1, 2, ..., 10) in base alla completezza e accuratezza, dove 10 è perfetto.
+
+            Risposta di Riferimento: "${suggestedAnswer}"
+            Risposta dello Studente: "${studentAnswer}"
+
+            Rispondi ESCLUSIVAMENTE con il NUMERO INTERO del punteggio (es. 7, 10, 0).`;
+
+            try {
+                const response = await exponentialBackoffFetch(GEMINI_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: gradingPrompt }] }],
+                        systemInstruction: { parts: [{ text: "Sei un correttore che risponde SOLO con un numero intero (0-10)." }] },
+                    })
+                });
+
+                const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '0';
+                const score = parseInt(rawText.match(/\d+/)?.[0] || '0');
+                return Math.max(0, Math.min(10, score)); // Assicura che sia tra 0 e 10
+            } catch (error) {
+                console.error("Errore nella correzione AI:", error);
+                return 0; // Fallback a zero in caso di errore API
+            }
+        }
+
+
+        // Caricamento della Verifica per lo Studente
+        async function loadStudentExam(examId) {
+            document.getElementById('teacher-mode').classList.add('hidden');
+            document.getElementById('student-mode').classList.remove('hidden');
+            document.getElementById('loading-text').parentElement.classList.remove('hidden');
+            document.getElementById('loading-text').textContent = "Caricamento verifica...";
+
+            try {
+                const examRef = doc(db, `artifacts/${APP_IDENTIFIER}/public/data/exams`, examId);
+                const docSnap = await getDoc(examRef);
+
+                if (docSnap.exists()) {
+                    const examData = docSnap.data();
+                    originalQuestions = examData.questions;
+                    currentExamId = examId;
+                    
+                    document.getElementById('student-exam-title').textContent = examData.title;
+                    document.getElementById('student-exam-description').textContent = `Classe: ${examData.classId}. ${examData.description}`;
+                    document.getElementById('result-student-class').textContent = examData.classId;
+                    document.getElementById('loading-text').parentElement.classList.add('hidden');
+                    renderStudentQuestions();
+                } else {
+                    document.getElementById('student-exam-title').textContent = "Verifica Non Trovata";
+                    document.getElementById('student-exam-description').textContent = "L'ID della verifica nell'URL non è valido o è stata rimossa.";
+                    document.getElementById('loading-text').parentElement.classList.add('hidden');
+                }
+            } catch (error) {
+                console.error("Errore nel caricamento della verifica:", error);
+                document.getElementById('student-exam-title').textContent = "Errore di Caricamento";
+                document.getElementById('student-exam-description').textContent = "Si è verificato un errore di rete o di database.";
+                document.getElementById('loading-text').parentElement.classList.add('hidden');
+            }
+        }
+
+        // Rendering delle Domande per lo Studente
+        function renderStudentQuestions() {
+            const container = document.getElementById('quiz-container');
+            container.innerHTML = '';
+
+            originalQuestions.forEach((q, index) => {
+                const div = document.createElement('div');
+                div.className = 'p-6 bg-white border border-gray-300 rounded-xl shadow-lg';
+                
+                let inputField = '';
+                let questionTypeClass = q.type === 'MULTIPLE_CHOICE' ? 'text-indigo-600' : 'text-red-600';
+
+                if (q.type === 'MULTIPLE_CHOICE') {
+                    inputField = `
+                        <div class="mt-4 space-y-3" data-question-id="${q.id}">
+                            ${q.options.map((opt) => `
+                                <label class="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-indigo-50 cursor-pointer transition duration-150 border border-gray-200 shadow-sm">
+                                    <input type="radio" name="q_${q.id}" value="${opt}" class="form-radio h-5 w-5 text-indigo-600 focus:ring-indigo-500" required>
+                                    <span class="ml-4 text-gray-700 font-medium">${opt}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    `;
+                } else {
+                    inputField = `
+                        <p class="font-semibold text-gray-700 mb-2 mt-4 border-l-4 pl-2 border-red-400">Risposta Aperta (Elaborare un testo):</p>
+                        <textarea name="q_${q.id}" rows="6" class="w-full rounded-lg border-gray-300 shadow-md p-3 focus:border-red-500 focus:ring focus:ring-red-200 focus:ring-opacity-50" placeholder="Scrivi qui la tua risposta..."></textarea>
+                    `;
+                }
+
+                const questionHtml = `
+                    <p class="font-bold text-xl text-gray-900 mb-4 border-b pb-2">
+                        Domanda ${index + 1}: <span class="text-sm font-normal ${questionTypeClass}">(${q.type === 'MULTIPLE_CHOICE' ? 'A Crocetta' : 'Aperta'})</span>
+                    </p>
+                    <p class="text-lg text-gray-800 mb-4">${q.questionText}</p>
+                    ${inputField}
+                `;
+                div.innerHTML = questionHtml;
+                container.appendChild(div);
+            });
+        }
+
+        // Inizio della Verifica (Attiva l'Anti-Copia)
+        window.startExam = function() {
+            const studentName = document.getElementById('student-name').value.trim();
+            if (!studentName) {
+                alertUser("Per favore, inserisci il tuo nome e cognome per iniziare.");
+                return;
+            }
+
+            document.getElementById('student-name').disabled = true;
+            document.getElementById('start-exam-btn').classList.add('hidden');
+            document.getElementById('quiz-container').classList.remove('hidden');
+            document.getElementById('submit-exam-btn').classList.remove('hidden');
+            
+            isExamActive = true;
+            setupAntiCheating(); 
+            alertUser("Verifica iniziata. Il sistema anti-copia è attivo.");
+        };
+
+        // Sistema Anti-Copia (Blocco e Consegna Auto) - CONFERMATO BLOCCO COPIA/INCOLLA
+        function setupAntiCheating() {
+            if (!isExamActive) return;
+
+            const handleViolation = (reason) => {
+                if (hasViolated || !isExamActive) return; 
+
+                hasViolated = true;
+                isExamActive = false;
+                
+                const overlay = document.getElementById('violation-overlay');
+                overlay.classList.add('active');
+                
+                // Consegna con voto zero e notifica al docente
+                submitExam(0, reason); 
+            };
+            
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') {
+                    handleViolation('Cambio Tab/Finestra (visibilitychange)');
+                }
+            });
+
+            window.addEventListener('blur', () => {
+                handleViolation('Perdita di Focus/Finestra (blur event)');
+            });
+            
+            // BLOCCO COPIA/INCOLLA (CONFERMATO)
+            document.addEventListener('copy', (e) => { e.preventDefault(); handleViolation('Tentativo di Copia (Ctrl+C)'); });
+            document.addEventListener('cut', (e) => { e.preventDefault(); handleViolation('Tentativo di Taglia (Ctrl+X)'); });
+            document.addEventListener('paste', (e) => { e.preventDefault(); handleViolation('Tentativo di Incolla (Ctrl+V)'); });
+            window.addEventListener('contextmenu', (e) => { e.preventDefault(); handleViolation('Menu Contestuale (Click Destro)'); });
+            
+             window.addEventListener('keydown', (e) => {
+                if (e.key === 'F12' || 
+                    (e.ctrlKey && e.shiftKey && e.key === 'I') || 
+                    (e.ctrlKey && e.shiftKey && e.key === 'J') ||
+                    (e.ctrlKey && e.key === 'U')) {
+                    e.preventDefault();
+                    handleViolation('Tentativo di ispezione/apertura Dev Tools/Sorgente');
+                }
+            });
+        }
+
+        // Consegna della Verifica
+        window.submitExam = async function(fixedScore = null, violationReason = null) {
+            if (!currentExamId) return;
+
+            const submitBtn = document.getElementById('submit-exam-btn');
+            if (submitBtn) submitBtn.disabled = true;
+            
+            const loadingContainer = document.getElementById('loading-message').parentElement;
+            const loadingText = document.getElementById('loading-text');
+
+            const studentName = document.getElementById('student-name').value.trim() || "Studente Anonimo";
+            document.getElementById('result-student-name').textContent = studentName; 
+
+            const examRef = doc(db, `artifacts/${APP_IDENTIFIER}/public/data/exams`, currentExamId);
+            const examSnap = await getDoc(examRef);
+            const examData = examSnap.data();
+            const teacherId = examData.teacherId; 
+
+            let totalScore = 0; // Punti totali acquisiti (somma dei punteggi 0-10 per domanda)
+            const maxScore = originalQuestions.length * 10; // 10 punti per domanda
+            const answers = [];
+            
+            try {
+                if (fixedScore === 0) {
+                    totalScore = 0;
+                } else {
+                    loadingContainer.classList.remove('hidden');
+                    loadingText.textContent = `Correzione automatica AI delle ${originalQuestions.length} domande...`;
+
+                    for (const q of originalQuestions) {
+                        let studentAnswer = null;
+                        let score = 0;
+                        let isCorrect = false;
+
+                        if (q.type === 'MULTIPLE_CHOICE') {
+                            const selectedOption = document.querySelector(`input[name="q_${q.id}"]:checked`);
+                            studentAnswer = selectedOption ? selectedOption.value : null;
+                            isCorrect = studentAnswer === q.correctAnswer;
+                            score = isCorrect ? 10 : 0; // 10 punti per MC giusta
+                        } else if (q.type === 'OPEN_ENDED') {
+                            const textarea = document.querySelector(`textarea[name="q_${q.id}"]`);
+                            studentAnswer = textarea ? textarea.value.trim() : null;
+                            // Correzione AI per risposte aperte (ritorna un punteggio 0-10)
+                            loadingText.textContent = `Correzione AI Domanda Aperta: "${q.questionText.substring(0, 30)}..."`;
+                            score = await gradeOpenEndedAnswer(q.questionText, studentAnswer, q.suggestedAnswer);
+                            isCorrect = score >= 5; // Consideriamo parzialmente corretta un punteggio di 5 o più
+                        }
+
+                        totalScore += score;
+
+                        answers.push({
+                            questionText: q.questionText, 
+                            type: q.type,
+                            studentAnswer: studentAnswer,
+                            correctAnswer: q.correctAnswer,
+                            suggestedAnswer: q.suggestedAnswer,
+                            isCorrect: isCorrect, 
+                            score: score // Punteggio acquisito (0-10)
+                        });
+                    }
+                }
+
+                // Calcolo del voto finale in percentuale (da 0 a 100)
+                const finalScorePercentage = maxScore > 0 
+                    ? (fixedScore === 0 ? 0 : Math.round((totalScore / maxScore) * 100))
+                    : 0; 
+                
+                // Dati da salvare nel DB del Docente
+                const resultData = {
+                    examId: currentExamId,
+                    examTitle: examData.title,
+                    copyNumber: examData.copyNumber || 1,
+                    studentName: studentName, 
+                    studentUserId: auth.currentUser.uid,
+                    classId: examData.classId,
+                    totalScore: totalScore, // Punti totali (somma dei punteggi 0-10)
+                    maxScore: maxScore,
+                    scorePercentage: finalScorePercentage, // Voto finale
+                    answers: answers,
+                    submittedAt: serverTimestamp(),
+                    violationDetected: fixedScore === 0,
+                    violationDetails: violationReason || null,
+                };
+
+                const resultsCollectionRef = collection(db, `artifacts/${APP_IDENTIFIER}/users/${teacherId}/results`);
+                await addDoc(resultsCollectionRef, resultData);
+                
+                // Aggiorna la UI dello Studente
+                document.getElementById('quiz-container').classList.add('hidden');
+                document.getElementById('submit-exam-btn').classList.add('hidden');
+                document.getElementById('result-display').classList.remove('hidden');
+                loadingContainer.classList.add('hidden');
+
+                const now = new Date().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                document.getElementById('result-date').textContent = now;
+
+                if (fixedScore === 0) {
+                     document.getElementById('result-display').className = 'mt-8 p-8 rounded-xl text-center shadow-inner bg-red-100 border-4 border-red-500';
+                     document.getElementById('final-score').textContent = `VERIFICA ANNULLATA. Voto: 0 / 100`;
+                     document.getElementById('final-score').className = 'text-red-700 font-extrabold text-4xl';
+                } else {
+                    document.getElementById('result-display').className = 'mt-8 p-8 rounded-xl text-center shadow-inner bg-green-50 border-4 border-green-500';
+                    document.getElementById('final-score').className = 'text-green-700 font-extrabold text-4xl';
+                    document.getElementById('final-score').textContent = `Voto Finale: ${finalScorePercentage} / 100`;
+                }
+                
+                // Riepilogo Risposte per la stampa
+                const summaryHtml = resultData.answers.map((ans, index) => {
+                    const isMC = ans.type === 'MULTIPLE_CHOICE';
+                    const scoreColor = ans.score > 0 ? 'text-green-700' : 'text-red-700';
+                    
+                    return `<p class="mt-2 text-sm ${scoreColor} border-b pb-1">
+                        **Domanda ${index + 1} (${isMC ? 'MC' : 'Aperta'}):** Punti Acquisiti: **${ans.score}/10**
+                        (Risposta data: ${ans.studentAnswer ? ans.studentAnswer.substring(0, 50) + (ans.studentAnswer.length > 50 ? '...' : '') : 'N/D'})
+                    </p>`;
+                }).join('');
+
+                document.getElementById('answers-summary').innerHTML = `<h4 class="text-xl font-bold mb-3 text-gray-800">Riepilogo Punti Acquisiti (Correzione AI)</h4>${summaryHtml}`;
+
+                isExamActive = false;
+                document.getElementById('violation-overlay').classList.remove('active');
+            } catch (error) {
+                console.error("Errore durante la consegna del risultato:", error);
+                alertUser("Errore durante la consegna del risultato. Controlla la console.");
+            }
+        };
+
+        // === ROUTING E INIZIALIZZAZIONE ===
+
+        function checkMode() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const examId = urlParams.get('examId');
+
+            if (examId) {
+                loadStudentExam(examId);
+            } else {
+                document.getElementById('loading-message').classList.add('hidden');
+                document.getElementById('teacher-mode').classList.remove('hidden');
+                setupResultsListener(); 
+            }
+        }
+
+        function alertUser(message) {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4';
+            modal.innerHTML = `
+                <div class="bg-white p-6 rounded-xl shadow-2xl max-w-md w-full text-center border-t-8 border-indigo-600 transform scale-100 transition-transform duration-300">
+                    <p class="text-2xl font-bold text-indigo-700 mb-4">${message}</p>
+                    <button class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 font-semibold transition duration-150" onclick="this.closest('.fixed').remove()">Chiudi</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        window.onload = initializeFirebase;
+    </script>
+
+</body>
+</html>
